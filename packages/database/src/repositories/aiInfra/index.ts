@@ -23,6 +23,16 @@ type DecryptUserKeyVaults = (encryptKeyVaultsStr: string | null) => Promise<any>
 
 const normalizeProvider = (provider: string) => provider.toLowerCase();
 
+const getBuiltinProviderSettings = (providerId: string) =>
+  DEFAULT_MODEL_PROVIDER_LIST.find((provider) => provider.id === providerId)?.settings || {};
+
+const toServerRuntimeConfig = (providerId: string, providerConfig: ProviderConfig) => ({
+  config: {},
+  fetchOnClient: providerConfig.fetchOnClient,
+  keyVaults: providerConfig.keyVaults || {},
+  settings: getBuiltinProviderSettings(providerId),
+});
+
 /**
  * Provider-level search defaults (only used when built-in models don't provide settings.searchImpl and settings.searchProvider)
  * Note: Not stored in DB, only injected during read
@@ -266,9 +276,16 @@ export class AiInfraRepos {
       this.getEnabledModels(false),
     ]);
 
-    const runtimeConfig = result;
+    const runtimeConfig = { ...result };
     Object.entries(result).forEach(([key, value]) => {
-      runtimeConfig[key] = merge(this.providerConfigs[key] || {}, value);
+      runtimeConfig[key] = merge(
+        toServerRuntimeConfig(key, this.providerConfigs[key] || ({} as ProviderConfig)),
+        value,
+      ) as any;
+    });
+    Object.entries(this.providerConfigs).forEach(([key, value]) => {
+      if (runtimeConfig[key] || !value.keyVaults) return;
+      runtimeConfig[key] = toServerRuntimeConfig(key, value);
     });
     const enabledAiModels = allModels.filter((model) => model.enabled);
     const enabledChatAiProviders = enabledAiProviders.filter((provider) => {
@@ -454,7 +471,7 @@ export class AiInfraRepos {
   getAiProviderDetail = async (id: string, decryptor?: DecryptUserKeyVaults) => {
     const config = await this.aiProviderModel.getAiProviderById(id, decryptor);
 
-    return merge(this.providerConfigs[id] || {}, config) as AiProviderDetailItem;
+    return merge(this.providerConfigs[id] || {}, config || {}) as AiProviderDetailItem;
   };
 
   /**
