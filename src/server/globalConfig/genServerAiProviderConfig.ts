@@ -14,6 +14,18 @@ interface ProviderSpecificConfig {
   withDeploymentName?: boolean;
 }
 
+const getServerManagedKeyVaults = (provider: ModelProvider) => {
+  if (provider !== ModelProvider.OpenAI) return;
+
+  const baseURL = process.env.OPENAI_PROXY_URL?.trim();
+  if (!baseURL) return;
+
+  return {
+    apiKey: 'server-managed',
+    baseURL,
+  };
+};
+
 export const genServerAiProvidersConfig = async (
   specificConfig: Record<any, ProviderSpecificConfig>,
 ) => {
@@ -33,6 +45,7 @@ export const genServerAiProvidersConfig = async (
       const providerConfig = specificConfig[provider as keyof typeof specificConfig] || {};
       const modelString =
         process.env[providerConfig.modelListKey ?? `${providerUpperCase}_MODEL_LIST`];
+      const serverManagedKeyVaults = getServerManagedKeyVaults(provider);
 
       // Process extractEnabledModels and transformToAiModelList concurrently
       const [enabledModels, serverModelLists] = await Promise.all([
@@ -55,6 +68,10 @@ export const genServerAiProvidersConfig = async (
           serverModelLists,
           ...(providerConfig.fetchOnClient !== undefined && {
             fetchOnClient: providerConfig.fetchOnClient,
+          }),
+          ...(serverManagedKeyVaults && {
+            fetchOnClient: false,
+            keyVaults: serverManagedKeyVaults,
           }),
         },
         provider,

@@ -156,11 +156,34 @@ export const enqueueAgentSignalSourceEvent = async <TSourceType extends AgentSig
     userId: context.userId,
   });
 
-  const trigger = await AgentSignalWorkflow.triggerRun({
-    agentId: context.agentId,
-    sourceEvent,
-    userId: context.userId,
-  });
+  if (!process.env.QSTASH_TOKEN) {
+    log('Skipping AgentSignal workflow enqueue because QSTASH_TOKEN is not configured');
+
+    return {
+      accepted: false,
+      scopeKey: sourceEvent.scopeKey,
+      workflowRunId: '',
+    };
+  }
+
+  let trigger: Awaited<ReturnType<typeof AgentSignalWorkflow.triggerRun>>;
+  try {
+    trigger = await AgentSignalWorkflow.triggerRun({
+      agentId: context.agentId,
+      sourceEvent,
+      userId: context.userId,
+    });
+  } catch (error) {
+    if (process.env.NODE_ENV !== 'development') throw error;
+
+    console.warn('[agent-signal] workflow enqueue skipped in development:', error);
+
+    return {
+      accepted: false,
+      scopeKey: sourceEvent.scopeKey,
+      workflowRunId: '',
+    };
+  }
 
   return {
     accepted: true,

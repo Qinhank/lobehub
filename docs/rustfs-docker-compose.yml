@@ -1,0 +1,70 @@
+x-rustfs-access-key: &rustfs_access_key '<access-key>'
+x-rustfs-secret-key: &rustfs_secret_key '<secret-key>'
+x-rustfs-bucket: &rustfs_bucket '<bucket-name>'
+
+services:
+  rustfs-perms:
+    image: alpine:latest
+    container_name: lobechat-rustfs-perms
+    user: root
+    volumes:
+      - /sd2/rustfs:/data
+    command: >
+      sh -c "
+      mkdir -p /data &&
+      chown -R 10001:10001 /data &&
+      echo 'RustFS volume permissions fixed'
+      "
+    restart: 'no'
+
+  rustfs:
+    image: rustfs/rustfs:latest
+    container_name: lobechat-rustfs
+    restart: unless-stopped
+    security_opt:
+      - 'no-new-privileges:true'
+    depends_on:
+      rustfs-perms:
+        condition: service_completed_successfully
+    ports:
+      - '65395:9000'
+      - '65396:9001'
+    environment:
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+      RUSTFS_CONSOLE_ADDRESS: 0.0.0.0:9001
+      RUSTFS_CONSOLE_ENABLE: 'true'
+      RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS: '*'
+      RUSTFS_ACCESS_KEY: *rustfs_access_key
+      RUSTFS_SECRET_KEY: *rustfs_secret_key
+      RUSTFS_OBS_LOGGER_LEVEL: info
+    volumes:
+      - /sd2/rustfs:/data
+    command:
+      - '--access-key'
+      - *rustfs_access_key
+      - '--secret-key'
+      - *rustfs_secret_key
+      - '/data'
+
+  rustfs-init:
+    image: minio/mc:latest
+    container_name: lobechat-rustfs-init
+    depends_on:
+      - rustfs
+    restart: 'no'
+    entrypoint: /bin/sh
+    command: >
+      -c '
+      set -eux;
+      mc --version;
+      until mc alias set rustfs http://rustfs:9000 "$$RUSTFS_ACCESS_KEY" "$$RUSTFS_SECRET_KEY"; do sleep 2; done;
+      mc ls rustfs || true;
+      mc mb "rustfs/$$RUSTFS_BUCKET" --ignore-existing;
+      mc admin info rustfs || true;
+      printf "{\"ID\":\"\",\"Statement\":[{\"Sid\":\"\",\"Effect\":\"Allow\",\"Principal\":{\"AWS\":[\"*\"]},\"Action\":[\"s3:GetObject\"],\"NotAction\":[],\"Resource\":[\"arn:aws:s3:::%s/*\"],\"NotResource\":[],\"Condition\":{}}],\"Version\":\"2012-10-17\"}\n" "$$RUSTFS_BUCKET" > /tmp/bucket.config.json;
+      mc anonymous set-json /tmp/bucket.config.json "rustfs/$$RUSTFS_BUCKET";
+      '
+    environment:
+      RUSTFS_ACCESS_KEY: *rustfs_access_key
+      RUSTFS_SECRET_KEY: *rustfs_secret_key
+      RUSTFS_BUCKET: *rustfs_bucket

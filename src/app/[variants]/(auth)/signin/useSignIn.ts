@@ -1,7 +1,7 @@
 import { ENABLE_BUSINESS_FEATURES } from '@lobechat/business-const';
 import { Form } from 'antd';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { CheckUserResponseData } from '@/app/(backend)/api/auth/check-user/route';
@@ -43,6 +43,7 @@ export const useSignIn = () => {
   const [step, setStep] = useState<Step>('email');
   const [email, setEmail] = useState('');
   const [isSocialOnly, setIsSocialOnly] = useState(false);
+  const autoSsoStartedRef = useRef(false);
   const [lastAuthProvider] = useState(() => {
     try {
       return localStorage.getItem(LAST_AUTH_PROVIDER_KEY);
@@ -220,7 +221,13 @@ export const useSignIn = () => {
       }
 
       const callbackUrl = searchParams.get('callbackUrl') || '/';
-      const additionalData = await getAdditionalData();
+      const hankqinSsoTicket = searchParams.get('hankqin_sso_ticket');
+      if (normalizedProvider === 'generic-oidc' && !hankqinSsoTicket) return;
+
+      const additionalData = {
+        ...(await getAdditionalData()),
+        ...(hankqinSsoTicket ? { hankqin_sso_ticket: hankqinSsoTicket } : {}),
+      };
       const signInWithAdditionalData = async () =>
         isBuiltinProvider(normalizedProvider)
           ? await signIn.social({
@@ -275,6 +282,16 @@ export const useSignIn = () => {
   };
 
   const resolvedProviders = ENABLE_BUSINESS_FEATURES ? ssoProviders : oAuthSSOProviders;
+  useEffect(() => {
+    const ticket = searchParams.get('hankqin_sso_ticket');
+    if (!ticket || autoSsoStartedRef.current || !serverConfigInit) return;
+    if (!resolvedProviders.some((provider) => normalizeProviderId(provider) === 'generic-oidc'))
+      return;
+
+    autoSsoStartedRef.current = true;
+    void handleSocialSignIn('generic-oidc');
+  }, [handleSocialSignIn, resolvedProviders, searchParams, serverConfigInit]);
+
   const sortedProviders = lastAuthProvider
     ? [...resolvedProviders].sort((a, b) => {
         if (a === lastAuthProvider) return -1;

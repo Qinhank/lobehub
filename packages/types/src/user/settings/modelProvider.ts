@@ -22,6 +22,10 @@ export interface ProviderConfig {
    */
   fetchOnClient?: boolean;
   /**
+   * server managed key vault defaults exposed to runtime config
+   */
+  keyVaults?: Record<string, string>;
+  /**
    * the latest fetch model list time
    */
   latestFetchTime?: number;

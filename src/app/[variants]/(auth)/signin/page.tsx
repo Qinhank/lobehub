@@ -4,55 +4,18 @@ import { Suspense } from 'react';
 
 import Loading from '@/components/Loading/BrandTextLoading';
 
-import { SignInEmailStep } from './SignInEmailStep';
-import { SignInPasswordStep } from './SignInPasswordStep';
 import { useSignIn } from './useSignIn';
 
-const SignInPage = () => {
-  const {
-    disableEmailPassword,
-    email,
-    form,
-    handleBackToEmail,
-    handleCheckUser,
-    handleForgotPassword,
-    handleSignIn,
-    handleSocialSignIn,
-    isSocialOnly,
-    lastAuthProvider,
-    loading,
-    oAuthSSOProviders,
-    serverConfigInit,
-    socialLoading,
-    step,
-  } = useSignIn();
+const SignInAutoStart = () => {
+  useSignIn();
 
+  return <Loading debugId={'Signin'} />;
+};
+
+const SignInPage = () => {
   return (
     <Suspense fallback={<Loading debugId={'Signin'} />}>
-      {step === 'email' ? (
-        <SignInEmailStep
-          disableEmailPassword={disableEmailPassword}
-          form={form as any}
-          isSocialOnly={isSocialOnly}
-          lastAuthProvider={lastAuthProvider}
-          loading={loading}
-          oAuthSSOProviders={oAuthSSOProviders}
-          serverConfigInit={serverConfigInit}
-          socialLoading={socialLoading}
-          onCheckUser={handleCheckUser}
-          onSetPassword={handleForgotPassword}
-          onSocialSignIn={handleSocialSignIn}
-        />
-      ) : (
-        <SignInPasswordStep
-          email={email}
-          form={form as any}
-          loading={loading}
-          onBackToEmail={handleBackToEmail}
-          onForgotPassword={handleForgotPassword}
-          onSubmit={handleSignIn}
-        />
-      )}
+      <SignInAutoStart />
     </Suspense>
   );
 };

@@ -14,6 +14,10 @@ const provider: GenericProviderDefinition<{
       clientSecret: env.AUTH_GENERIC_OIDC_SECRET,
       issuer: env.AUTH_GENERIC_OIDC_ISSUER,
       overrides: {
+        authorizationUrlParams: (ctx: any): Record<string, string> => {
+          const ticket = ctx.body?.additionalData?.hankqin_sso_ticket;
+          return typeof ticket === 'string' && ticket ? { ticket } : {};
+        },
         /**
          * Mirror NextAuth's fallback that prefers name -> username -> email so Better Auth never
          * fails with name_is_missing when upstream profiles only expose username/email fields.
