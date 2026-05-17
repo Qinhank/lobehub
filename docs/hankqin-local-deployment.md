@@ -310,7 +310,7 @@ INTERNAL_APP_URL=http://localhost:3010
 AUTH_DISABLE_EMAIL_PASSWORD=1
 JWKS_KEY='{"keys":[...]}'
 OPENAI_API_KEY=unused
-OPENAI_PROXY_URL=http://localhost:3010/sub2api
+OPENAI_PROXY_URL=/sub2api
 OPENAI_MODEL_LIST=gpt5.5=GPT-5.5<1050000:reasoning:vision:fc:search>,gpt-image-2
 DEFAULT_AGENT_CONFIG="model=gpt5.5;provider=openai;"
 SUB2API_PROXY_TARGET=http://<openai-compatible-upstream-host>:<port>

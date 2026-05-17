@@ -4,6 +4,7 @@ import { ModelProvider } from 'model-bank';
 import * as AiModels from 'model-bank';
 
 import { getLLMConfig } from '@/envs/llm';
+import { resolveServerUrl } from '@/server/utils/resolveServerUrl';
 import { extractEnabledModels, transformToAiModelList } from '@/utils/server/parseModels';
 
 interface ProviderSpecificConfig {
@@ -17,7 +18,7 @@ interface ProviderSpecificConfig {
 const getServerManagedKeyVaults = (provider: ModelProvider) => {
   if (provider !== ModelProvider.OpenAI) return;
 
-  const baseURL = process.env.OPENAI_PROXY_URL?.trim();
+  const baseURL = resolveServerUrl(process.env.OPENAI_PROXY_URL);
   if (!baseURL) return;
 
   return {
