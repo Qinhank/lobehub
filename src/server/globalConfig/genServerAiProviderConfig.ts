@@ -27,6 +27,14 @@ const getServerManagedKeyVaults = (provider: ModelProvider) => {
   };
 };
 
+const getServerManagedConfig = (provider: ModelProvider) => {
+  if (provider !== ModelProvider.OpenAI || !process.env.OPENAI_PROXY_URL?.trim()) return;
+
+  return {
+    enableResponseApi: process.env.OPENAI_ENABLE_RESPONSES_API === '1',
+  };
+};
+
 export const genServerAiProvidersConfig = async (
   specificConfig: Record<any, ProviderSpecificConfig>,
 ) => {
@@ -71,6 +79,7 @@ export const genServerAiProvidersConfig = async (
             fetchOnClient: providerConfig.fetchOnClient,
           }),
           ...(serverManagedKeyVaults && {
+            config: getServerManagedConfig(provider),
             fetchOnClient: false,
             keyVaults: serverManagedKeyVaults,
           }),

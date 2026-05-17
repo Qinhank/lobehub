@@ -328,6 +328,7 @@ SUB2API_PROXY_API_KEY=<upstream-api-key>
 - `JWKS_KEY` 可以用 `node scripts/generate-oidc-jwk.mjs` 生成；真实值只放本地 `.env`，不要提交。
 - `/sub2api/*` 会由 Next.js 代理到 `SUB2API_PROXY_TARGET + SUB2API_PROXY_TARGET_PREFIX + /*`。默认即 `/sub2api/images/generations` -> `http://<OPENAI_COMPATIBLE_UPSTREAM>/v1/images/generations`。
 - 如果上游 `<LAN_SERVER_IP>:8080` 本身不需要 `/v1` 前缀，把 `SUB2API_PROXY_TARGET_PREFIX` 设为空字符串。
+- `OPENAI_ENABLE_RESPONSES_API` 默认不要配置；当前局域网上游只支持 Chat Completions，不支持 `/v1/responses`，误开会导致聊天请求 400。
 - `OPENAI_API_KEY=unused` 只是 LobeHub 侧占位；真实上游 key 放在 `SUB2API_PROXY_API_KEY`，代理会覆盖 `Authorization` 后再转发。
 - `gpt5.5` 是 Hankqin 网关模型 ID，已作为 OpenAI 模型别名写入 model bank。
 - `gpt-image-2` 已存在于 OpenAI image model bank，这里把图片生成功能的初始选择切到它。

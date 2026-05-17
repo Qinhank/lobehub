@@ -20,6 +20,13 @@ vi.mock('@/envs/llm', () => ({
   })),
 }));
 
+vi.mock('@/envs/app', () => ({
+  appEnv: {
+    APP_URL: 'https://public.example.com',
+    INTERNAL_APP_URL: 'https://internal.example.com',
+  },
+}));
+
 vi.mock('@/utils/server/parseModels', () => ({
   extractEnabledModels: vi.fn(async (providerId: string, modelString?: string) => {
     if (!modelString) return undefined;
@@ -39,6 +46,8 @@ describe('genServerAiProvidersConfig', () => {
         delete process.env[key];
       }
     });
+    delete process.env.OPENAI_ENABLE_RESPONSES_API;
+    delete process.env.OPENAI_PROXY_URL;
   });
 
   it('should generate basic provider config with default settings', async () => {
@@ -106,6 +115,30 @@ describe('genServerAiProvidersConfig', () => {
 
     expect(extractEnabledModels).toHaveBeenCalledWith('openai', '+gpt-4,+gpt-3.5-turbo', false);
     expect(result.openai.enabledModels).toEqual(['gpt-4', 'gpt-3.5-turbo']);
+  });
+
+  it('should disable Responses API by default for server-managed OpenAI proxy', async () => {
+    process.env.OPENAI_PROXY_URL = '/sub2api';
+
+    const result = await genServerAiProvidersConfig({});
+
+    expect(result.openai).toMatchObject({
+      config: { enableResponseApi: false },
+      fetchOnClient: false,
+      keyVaults: {
+        apiKey: 'server-managed',
+        baseURL: expect.stringContaining('/sub2api'),
+      },
+    });
+  });
+
+  it('should allow enabling Responses API for server-managed OpenAI proxy by env', async () => {
+    process.env.OPENAI_ENABLE_RESPONSES_API = '1';
+    process.env.OPENAI_PROXY_URL = '/sub2api';
+
+    const result = await genServerAiProvidersConfig({});
+
+    expect(result.openai.config).toEqual({ enableResponseApi: true });
   });
 
   it('should use custom modelListKey from specificConfig', async () => {

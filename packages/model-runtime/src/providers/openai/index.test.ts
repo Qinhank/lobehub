@@ -287,6 +287,22 @@ describe('LobeOpenAI', () => {
       expect(createCall.model).toBe('gpt-5.5');
     });
 
+    it('should use chat completions for gpt-5.5 when apiMode is chatCompletion', async () => {
+      const payload = {
+        apiMode: 'chatCompletion' as const,
+        messages: [{ content: 'Hello', role: 'user' as const }],
+        model: 'gpt-5.5',
+        temperature: 0.7,
+      };
+
+      await instance.chat(payload);
+
+      expect(instance['client'].chat.completions.create).toHaveBeenCalled();
+      expect(instance['client'].responses.create).not.toHaveBeenCalled();
+      const createCall = (instance['client'].chat.completions.create as Mock).mock.calls[0][0];
+      expect(createCall.model).toBe('gpt-5.5');
+    });
+
     it('should use responses API when enabledSearch is true', async () => {
       const payload = {
         enabledSearch: true,
