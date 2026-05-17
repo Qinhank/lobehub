@@ -18,6 +18,7 @@ import { getBusinessModelRuntimeHooks } from '@/business/server/model-runtime';
 import { AiProviderModel } from '@/database/models/aiProvider';
 import { type LobeChatDatabase } from '@/database/type';
 import { getLLMConfig } from '@/envs/llm';
+import { resolveServerUrl } from '@/server/utils/resolveServerUrl';
 
 import { KeyVaultsGateKeeper } from '../KeyVaultsEncrypt';
 import apiKeyManager from './apiKeyManager';
@@ -181,7 +182,8 @@ const getParamsFromPayload = (provider: string, payload: ClientSecretPayload) =>
       }
 
       const apiKey = apiKeyManager.pick(payload?.apiKey || llmConfig[`${upperProvider}_API_KEY`]);
-      const baseURL = payload?.baseURL || process.env[`${upperProvider}_PROXY_URL`];
+      const baseURL =
+        payload?.baseURL || resolveServerUrl(process.env[`${upperProvider}_PROXY_URL`]);
 
       return baseURL ? { apiKey, baseURL } : { apiKey };
     }
