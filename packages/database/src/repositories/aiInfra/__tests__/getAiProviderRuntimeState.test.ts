@@ -100,6 +100,89 @@ describe('AiInfraRepos', () => {
       });
     });
 
+    it('should merge server-managed provider config into runtime state', async () => {
+      repo = new AiInfraRepos(serverDB, userId, {
+        openai: {
+          config: { enableResponseApi: false },
+          enabled: true,
+          keyVaults: {
+            apiKey: 'server-managed',
+            baseURL: 'https://chat.example.com/sub2api',
+          },
+        },
+      });
+
+      vi.spyOn(repo.aiProviderModel, 'getAiProviderRuntimeConfig').mockResolvedValue({});
+      vi.spyOn(repo, 'getUserEnabledProviderList').mockResolvedValue([
+        { id: 'openai', logo: 'logo1', name: 'OpenAI', source: 'builtin' },
+      ]);
+      vi.spyOn(repo, 'getEnabledModels').mockResolvedValue([
+        {
+          abilities: {},
+          enabled: true,
+          id: 'gpt5.5',
+          providerId: 'openai',
+          type: 'chat',
+        },
+      ]);
+
+      const result = await repo.getAiProviderRuntimeState();
+
+      expect(result.runtimeConfig.openai).toMatchObject({
+        config: { enableResponseApi: false },
+        keyVaults: {
+          apiKey: 'server-managed',
+          baseURL: 'https://chat.example.com/sub2api',
+        },
+      });
+    });
+
+    it('should let server-managed provider config override stale user runtime config', async () => {
+      repo = new AiInfraRepos(serverDB, userId, {
+        openai: {
+          config: { enableResponseApi: false },
+          enabled: true,
+          keyVaults: {
+            apiKey: 'server-managed',
+            baseURL: 'https://chat.example.com/sub2api',
+          },
+        },
+      });
+
+      vi.spyOn(repo.aiProviderModel, 'getAiProviderRuntimeConfig').mockResolvedValue({
+        openai: {
+          config: { enableResponseApi: true },
+          keyVaults: {
+            apiKey: 'user-key',
+            baseURL: 'https://api.openai.com/v1',
+          },
+          settings: {},
+        },
+      } as any);
+      vi.spyOn(repo, 'getUserEnabledProviderList').mockResolvedValue([
+        { id: 'openai', logo: 'logo1', name: 'OpenAI', source: 'builtin' },
+      ]);
+      vi.spyOn(repo, 'getEnabledModels').mockResolvedValue([
+        {
+          abilities: {},
+          enabled: true,
+          id: 'gpt5.5',
+          providerId: 'openai',
+          type: 'chat',
+        },
+      ]);
+
+      const result = await repo.getAiProviderRuntimeState();
+
+      expect(result.runtimeConfig.openai).toMatchObject({
+        config: { enableResponseApi: false },
+        keyVaults: {
+          apiKey: 'server-managed',
+          baseURL: 'https://chat.example.com/sub2api',
+        },
+      });
+    });
+
     it('should return provider runtime state with enabledImageAiProviders', async () => {
       const mockRuntimeConfig = {
         fal: {

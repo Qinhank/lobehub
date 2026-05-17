@@ -8,6 +8,9 @@ export interface ProviderConfig {
    * whether to auto fetch model lists
    */
   autoFetchModelLists?: boolean;
+  config?: {
+    enableResponseApi?: boolean;
+  };
   /**
    * user defined model cards
    */

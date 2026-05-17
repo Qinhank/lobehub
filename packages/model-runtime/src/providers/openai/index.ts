@@ -29,8 +29,9 @@ export const params = {
   chatCompletion: {
     handlePayload: (payload) => {
       const { enabledSearch, model, ...rest } = payload;
+      const forceChatCompletions = payload.apiMode === 'chatCompletion';
 
-      if (responsesAPIModels.has(model) || enabledSearch) {
+      if (!forceChatCompletions && (responsesAPIModels.has(model) || enabledSearch)) {
         return { ...rest, apiMode: 'responses', enabledSearch, model } as ChatStreamPayload;
       }
 

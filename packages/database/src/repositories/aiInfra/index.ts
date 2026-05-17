@@ -27,7 +27,7 @@ const getBuiltinProviderSettings = (providerId: string) =>
   DEFAULT_MODEL_PROVIDER_LIST.find((provider) => provider.id === providerId)?.settings || {};
 
 const toServerRuntimeConfig = (providerId: string, providerConfig: ProviderConfig) => ({
-  config: {},
+  config: providerConfig.config || {},
   fetchOnClient: providerConfig.fetchOnClient,
   keyVaults: providerConfig.keyVaults || {},
   settings: getBuiltinProviderSettings(providerId),
@@ -278,10 +278,16 @@ export class AiInfraRepos {
 
     const runtimeConfig = { ...result };
     Object.entries(result).forEach(([key, value]) => {
-      runtimeConfig[key] = merge(
-        toServerRuntimeConfig(key, this.providerConfigs[key] || ({} as ProviderConfig)),
-        value,
-      ) as any;
+      const serverRuntimeConfig = toServerRuntimeConfig(
+        key,
+        this.providerConfigs[key] || ({} as ProviderConfig),
+      );
+
+      runtimeConfig[key] = merge(serverRuntimeConfig, value) as any;
+
+      if (this.providerConfigs[key]?.keyVaults) {
+        runtimeConfig[key] = merge(runtimeConfig[key], serverRuntimeConfig) as any;
+      }
     });
     Object.entries(this.providerConfigs).forEach(([key, value]) => {
       if (runtimeConfig[key] || !value.keyVaults) return;
