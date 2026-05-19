@@ -12,12 +12,27 @@ import { filterBuiltinSkills } from '@/helpers/skillFilters';
 import { cloudSandboxService } from '@/services/cloudSandbox';
 import { agentSkillService } from '@/services/skill';
 import { useChatStore } from '@/store/chat';
+import { getServerConfigStoreState, serverConfigSelectors } from '@/store/serverConfig';
+
+const isCloudSandboxAvailable = () => {
+  const serverConfigState = getServerConfigStoreState();
+  return serverConfigState ? serverConfigSelectors.enableCloudSandbox(serverConfigState) : true;
+};
+
+const cloudSandboxDisabledResult = {
+  exitCode: 1,
+  output: '',
+  stderr: 'Cloud sandbox is disabled in this deployment.',
+  success: false,
+};
 
 // Create runtime with client-side service
 const runtime = new SkillsExecutionRuntime({
   builtinSkills: filterBuiltinSkills(builtinSkills),
   service: {
     execScript: async (command, options) => {
+      if (!isCloudSandboxAvailable()) return cloudSandboxDisabledResult;
+
       const { activatedSkills, description } = options;
 
       // Cloud: execute via Cloud Sandbox with execScript tool
@@ -66,6 +81,13 @@ const runtime = new SkillsExecutionRuntime({
       }
     },
     exportFile: async (path, filename) => {
+      if (!isCloudSandboxAvailable()) {
+        return {
+          filename,
+          success: false,
+        };
+      }
+
       // Get current session context
       const chatState = useChatStore.getState();
       const topicId = chatState.activeTopicId || 'default';
@@ -94,6 +116,8 @@ const runtime = new SkillsExecutionRuntime({
     findByName: (name) => agentSkillService.getByName(name),
     readResource: (id, path) => agentSkillService.readResource(id, path),
     runCommand: async ({ command, timeout }) => {
+      if (!isCloudSandboxAvailable()) return cloudSandboxDisabledResult;
+
       // Cloud: execute via Cloud Sandbox
       // Get current session context for sandbox isolation
       const chatState = useChatStore.getState();

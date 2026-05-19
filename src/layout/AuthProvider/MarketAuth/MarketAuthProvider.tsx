@@ -714,9 +714,9 @@ export const MarketAuthProvider = ({ children, isDesktop }: MarketAuthProviderPr
             '[MarketAuth] Desktop: market 401 — refresh failed, skipping community sign-in UI',
           );
         }
-        return;
+        return refreshed;
       }
-      await handleUnauthorized();
+      return handleUnauthorized();
     });
 
     return unsubscribe;

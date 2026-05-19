@@ -19,6 +19,7 @@ import { useAgentStore } from '@/store/agent';
 import { agentByIdSelectors, chatConfigByIdSelectors } from '@/store/agent/selectors';
 import { useChatStore } from '@/store/chat';
 import { topicSelectors } from '@/store/chat/selectors';
+import { serverConfigSelectors, useServerConfigStore } from '@/store/serverConfig';
 
 import ContextWindow from '../ActionBar/Token';
 import { useAgentId } from '../hooks/useAgentId';
@@ -107,6 +108,7 @@ const RuntimeConfig = memo(() => {
   const { updateAgentChatConfig } = useUpdateAgentConfig();
   const [dirPopoverOpen, setDirPopoverOpen] = useState(false);
   const [modePopoverOpen, setModePopoverOpen] = useState(false);
+  const cloudSandboxAvailable = useServerConfigStore(serverConfigSelectors.enableCloudSandbox);
   const showContextWindow = useChatInputStore((s) =>
     s.rightActions.flat().includes('contextWindow'),
   );
@@ -156,8 +158,10 @@ const RuntimeConfig = memo(() => {
     );
   }
 
-  const ModeIcon = MODE_ICONS[runtimeMode];
-  const modeLabel = t(`runtimeEnv.mode.${runtimeMode}`);
+  const displayRuntimeMode =
+    runtimeMode === 'cloud' && !cloudSandboxAvailable ? 'none' : runtimeMode;
+  const ModeIcon = MODE_ICONS[displayRuntimeMode];
+  const modeLabel = t(`runtimeEnv.mode.${displayRuntimeMode}`);
 
   const displayName = effectiveWorkingDirectory
     ? effectiveWorkingDirectory.split('/').findLast(Boolean) || effectiveWorkingDirectory
@@ -175,12 +179,16 @@ const RuntimeConfig = memo(() => {
           },
         ]
       : []),
-    {
-      desc: t('runtimeEnv.mode.cloudDesc'),
-      icon: CloudIcon,
-      label: t('runtimeEnv.mode.cloud'),
-      mode: 'cloud',
-    },
+    ...(cloudSandboxAvailable
+      ? [
+          {
+            desc: t('runtimeEnv.mode.cloudDesc'),
+            icon: CloudIcon,
+            label: t('runtimeEnv.mode.cloud'),
+            mode: 'cloud' as RuntimeEnvMode,
+          },
+        ]
+      : []),
     {
       desc: t('runtimeEnv.mode.noneDesc'),
       icon: MonitorOffIcon,
@@ -195,7 +203,7 @@ const RuntimeConfig = memo(() => {
         <Flexbox
           horizontal
           align={'flex-start'}
-          className={cx(styles.modeOption, runtimeMode === mode && styles.modeOptionActive)}
+          className={cx(styles.modeOption, displayRuntimeMode === mode && styles.modeOptionActive)}
           gap={12}
           key={mode}
           onClick={() => switchMode(mode)}

@@ -1053,6 +1053,7 @@ export class AiAgentService {
             }
           : undefined,
         disableLocalSystem,
+        enableCloudSandbox: !toolsEnv.DISABLE_CLOUD_SANDBOX,
         globalMemoryEnabled,
         hasAgentDocuments,
         hasEnabledKnowledgeBases,

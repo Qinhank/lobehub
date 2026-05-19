@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { CloudSandboxManifest } from '@lobechat/builtin-tool-cloud-sandbox';
 import { KnowledgeBaseManifest } from '@lobechat/builtin-tool-knowledge-base';
 import { LobeAgentManifest } from '@lobechat/builtin-tool-lobe-agent';
 import { LocalSystemManifest } from '@lobechat/builtin-tool-local-system';
@@ -210,6 +211,27 @@ describe('createServerAgentToolsEngine', () => {
 
     // LocalSystem should be filtered out (disabled) on server
     expect(result.enabledToolIds).not.toContain(LocalSystemManifest.identifier);
+  });
+
+  it('should disable CloudSandbox when deployment turns it off', () => {
+    const context = createMockContext();
+    const engine = createServerAgentToolsEngine(context, {
+      agentConfig: {
+        chatConfig: { runtimeEnv: { runtimeMode: { web: 'cloud' } } },
+        plugins: [CloudSandboxManifest.identifier],
+      },
+      enableCloudSandbox: false,
+      model: 'gpt-4',
+      provider: 'openai',
+    });
+
+    const result = engine.generateToolsDetailed({
+      toolIds: [CloudSandboxManifest.identifier],
+      model: 'gpt-4',
+      provider: 'openai',
+    });
+
+    expect(result.enabledToolIds).not.toContain(CloudSandboxManifest.identifier);
   });
 
   it('should enable WebBrowsing when search mode is on', () => {
