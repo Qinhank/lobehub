@@ -27,6 +27,35 @@ describe('featureFlagsSelectors', () => {
 });
 
 describe('serverConfigSelectors', () => {
+  describe('enableCloudSandbox', () => {
+    it('should default to true when not defined', () => {
+      const store = initServerConfigStore({
+        serverConfig: {
+          aiProvider: {},
+          telemetry: {},
+        },
+      });
+
+      const result = serverConfigSelectors.enableCloudSandbox(store.getState());
+
+      expect(result).toBe(true);
+    });
+
+    it('should return false when disabled by server config', () => {
+      const store = initServerConfigStore({
+        serverConfig: {
+          aiProvider: {},
+          enableCloudSandbox: false,
+          telemetry: {},
+        },
+      });
+
+      const result = serverConfigSelectors.enableCloudSandbox(store.getState());
+
+      expect(result).toBe(false);
+    });
+  });
+
   describe('enabledTelemetryChat', () => {
     it('should return langfuse value from store when defined', () => {
       const store = initServerConfigStore({

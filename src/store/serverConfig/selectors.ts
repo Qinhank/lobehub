@@ -5,6 +5,7 @@ export const featureFlagsSelectors = (s: ServerConfigStore) => s.featureFlags;
 export const serverConfigSelectors = {
   disableEmailPassword: (s: ServerConfigStore) => s.serverConfig.disableEmailPassword || false,
   enableBusinessFeatures: (s: ServerConfigStore) => s.serverConfig.enableBusinessFeatures || false,
+  enableCloudSandbox: (s: ServerConfigStore) => s.serverConfig.enableCloudSandbox ?? true,
   enableEmailVerification: (s: ServerConfigStore) =>
     s.serverConfig.enableEmailVerification || false,
   enableKlavis: (s: ServerConfigStore) => s.serverConfig.enableKlavis || false,

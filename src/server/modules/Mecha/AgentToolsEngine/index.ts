@@ -129,6 +129,7 @@ export const createServerAgentToolsEngine = (
     clientRuntime,
     deviceContext,
     disableLocalSystem = false,
+    enableCloudSandbox = true,
     globalMemoryEnabled = false,
     hasAgentDocuments = false,
     hasEnabledKnowledgeBases = false,
@@ -201,7 +202,7 @@ export const createServerAgentToolsEngine = (
     // Always-on builtin tools
     ...Object.fromEntries(alwaysOnToolIds.map((id) => [id, true])),
     // System-level rules (may override user selection for specific tools)
-    [CloudSandboxManifest.identifier]: runtimeMode === 'cloud',
+    [CloudSandboxManifest.identifier]: enableCloudSandbox && runtimeMode === 'cloud',
     [KnowledgeBaseManifest.identifier]: hasEnabledKnowledgeBases,
     // Local-system: gated by `canUseDevice` (resolveDeviceAccessPolicy)
     // first — keeps external bot senders out before runtime checks even

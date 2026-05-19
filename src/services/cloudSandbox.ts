@@ -6,7 +6,43 @@ import {
   type ExportAndUploadFileResult,
 } from '@/server/routers/tools/market';
 
+const isMarketUnauthorizedError = (error: unknown): boolean => {
+  const err = error as {
+    data?: { code?: string; httpStatus?: number };
+    message?: string;
+  };
+  const message = err.message?.toLowerCase() || '';
+
+  return (
+    err.data?.httpStatus === 401 ||
+    err.data?.code === 'UNAUTHORIZED' ||
+    message.includes('market authorization expired')
+  );
+};
+
 class CloudSandboxService {
+  private async retryAfterMarketAuth<T>(path: string, request: () => Promise<T>): Promise<T> {
+    try {
+      return await request();
+    } catch (error) {
+      if (!isMarketUnauthorizedError(error)) {
+        throw error;
+      }
+
+      const { marketAuthEvents } = await import('@/layout/AuthProvider/MarketAuth/events');
+      const recovered = await marketAuthEvents.requestRecovery({
+        path,
+        timestamp: Date.now(),
+      });
+
+      if (!recovered) {
+        throw error;
+      }
+
+      return request();
+    }
+  }
+
   /**
    * Call a cloud sandbox tool
    * @param toolName - The name of the tool to call (e.g., 'runCommand', 'writeFile')
@@ -25,7 +61,9 @@ class CloudSandboxService {
       userId: context.userId,
     };
 
-    return toolsClient.market.execInSandbox.mutate(input);
+    return this.retryAfterMarketAuth('market.execInSandbox', () =>
+      toolsClient.market.execInSandbox.mutate(input),
+    );
   }
 
   /**
@@ -47,7 +85,9 @@ class CloudSandboxService {
       topicId,
     };
 
-    return toolsClient.market.exportAndUploadFile.mutate(input);
+    return this.retryAfterMarketAuth('market.exportAndUploadFile', () =>
+      toolsClient.market.exportAndUploadFile.mutate(input),
+    );
   }
 }
 

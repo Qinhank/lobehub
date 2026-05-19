@@ -92,6 +92,8 @@ export interface ServerCreateAgentToolsEngineParams {
   };
   /** Whether to suppress the local-system builtin while preserving other tools. */
   disableLocalSystem?: boolean;
+  /** Whether cloud sandbox tools are available in this deployment. */
+  enableCloudSandbox?: boolean;
   /** Whether the user's global memory setting is enabled */
   globalMemoryEnabled?: boolean;
   /** Whether agent has agent documents */

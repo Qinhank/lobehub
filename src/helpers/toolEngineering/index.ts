@@ -14,6 +14,7 @@ import { type ChatCompletionTool, type ToolManifest, type WorkingModel } from '@
 import { isToolAvailableInCurrentEnv } from '@/helpers/toolAvailability';
 import { getAgentStoreState } from '@/store/agent';
 import { agentChatConfigSelectors, agentSelectors } from '@/store/agent/selectors';
+import { getServerConfigStoreState, serverConfigSelectors } from '@/store/serverConfig';
 import { getToolStoreState } from '@/store/tool';
 import {
   klavisStoreSelectors,
@@ -137,6 +138,10 @@ export const createAgentToolsEngine = (
     agentChatConfigSelectors.currentChatConfig(agentState).memory?.enabled ??
     settingsSelectors.memoryEnabled(useUserStore.getState());
   const webBrowsingEnabled = searchConfig.useApplicationBuiltinSearchTool;
+  const serverConfigState = getServerConfigStoreState();
+  const cloudSandboxAvailable = serverConfigState
+    ? serverConfigSelectors.enableCloudSandbox(serverConfigState)
+    : true;
 
   const chatModeRules = {
     [KnowledgeBaseManifest.identifier]: kbEnabled,
@@ -153,7 +158,8 @@ export const createAgentToolsEngine = (
     // Always-on builtin tools
     ...Object.fromEntries(alwaysOnToolIds.map((id) => [id, true])),
     // System-level rules (may override user selection for specific tools)
-    [CloudSandboxManifest.identifier]: agentChatConfigSelectors.isCloudSandboxEnabled(agentState),
+    [CloudSandboxManifest.identifier]:
+      cloudSandboxAvailable && agentChatConfigSelectors.isCloudSandboxEnabled(agentState),
     [KnowledgeBaseManifest.identifier]: kbEnabled,
     [LocalSystemManifest.identifier]: agentChatConfigSelectors.isLocalSystemEnabled(agentState),
     [MemoryManifest.identifier]: memoryEnabled,

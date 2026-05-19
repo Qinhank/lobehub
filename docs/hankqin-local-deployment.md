@@ -105,6 +105,16 @@ S3_SET_ACL=0
 | QStash/Agent Gateway | 仅队列模式需要   | 生产级异步 Agent 执行                                                                  | `AGENT_RUNTIME_MODE=queue`、`QSTASH_TOKEN`、`AGENT_GATEWAY_*`                                    |
 | Langfuse             | 可选             | LLM 调用观测                                                                           | `ENABLE_LANGFUSE`、`LANGFUSE_*`                                                                  |
 
+本地 / 自托管环境建议显式禁用 LobeHub Market 云沙箱：
+
+```dotenv
+DISABLE_CLOUD_SANDBOX=1
+```
+
+云沙箱和沙箱文件导出依赖 LobeHub Market 授权；本地部署没有可用的 Market OAuth 授权链路时，开启云沙箱会在生成 HTML、报表等文件时出现 `Market authorization expired`。禁用后，HTML 会走对话内 artifact 预览 / 下载路径，不再触发 Market 授权。
+
+Market 能力拆分、Skill Connect 替代方案、Docker sandbox 和 AWS AgentCore Code Interpreter 路线见 [hankqin-market-sandbox-research.md](./hankqin-market-sandbox-research.md)。
+
 当前推荐的最小正式组合：
 
 ```text
