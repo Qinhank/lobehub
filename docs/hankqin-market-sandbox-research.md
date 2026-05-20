@@ -235,6 +235,14 @@ Node.js 接入侧，AWS SDK v3 已有包：
 建议新增抽象：
 
 ```text
+SANDBOX_PROVIDER=market|agent-infra
+SANDBOX_BASE_URL=http://<sandbox-host>:62981
+SANDBOX_WORKSPACE=/workspace/vite-project
+```
+
+如果后续继续扩展：
+
+```text
 SANDBOX_PROVIDER=disabled|market|docker|aws-agentcore
 AWS_AGENTCORE_REGION=us-west-2
 AWS_AGENTCORE_CODE_INTERPRETER_ID=aws.codeinterpreter.v1
