@@ -7,37 +7,40 @@ import { type CodeInterpreterToolName } from '@lobehub/market-sdk';
 import debug from 'debug';
 import { sha256 } from 'js-sha256';
 
+import { toolsEnv } from '@/envs/tools';
 import { FileS3 } from '@/server/modules/S3';
 import { type FileService } from '@/server/services/file';
 import { type MarketService } from '@/server/services/market';
+
+import { AgentInfraSandboxService } from './agentInfra';
+import { getSandboxProvider } from './config';
 
 const log = debug('lobe-server:sandbox-service');
 
 export interface ServerSandboxServiceOptions {
   fileService: FileService;
-  marketService: MarketService;
+  marketService?: MarketService;
   topicId: string;
   userId: string;
+}
+
+interface MarketSandboxServiceOptions extends ServerSandboxServiceOptions {
+  marketService: MarketService;
 }
 
 /**
  * Server-side Sandbox Service
  *
- * This service implements ISandboxService for server-side execution.
- * Context (topicId, userId) is bound at construction time.
- * It uses MarketService to call sandbox tools.
- *
- * Usage:
- * - Used by BuiltinToolsExecutor when executing CloudSandbox tools on server
- * - MarketService handles authentication via trustedClientToken
+ * This service implements ISandboxService for server-side execution by delegating
+ * to the configured provider (`market` or a self-hosted sandbox).
  */
-export class ServerSandboxService implements ISandboxService {
+class MarketSandboxService implements ISandboxService {
   private fileService: FileService;
   private marketService: MarketService;
   private topicId: string;
   private userId: string;
 
-  constructor(options: ServerSandboxServiceOptions) {
+  constructor(options: MarketSandboxServiceOptions) {
     this.fileService = options.fileService;
     this.marketService = options.marketService;
     this.topicId = options.topicId;
@@ -182,5 +185,43 @@ export class ServerSandboxService implements ISandboxService {
         success: false,
       };
     }
+  }
+}
+
+export class ServerSandboxService implements ISandboxService {
+  private readonly service: ISandboxService;
+
+  constructor(options: ServerSandboxServiceOptions) {
+    const provider = getSandboxProvider();
+
+    if (provider === 'agent-infra') {
+      this.service = new AgentInfraSandboxService({
+        baseUrl: toolsEnv.SANDBOX_BASE_URL || '',
+        fileService: options.fileService,
+        topicId: options.topicId,
+        workspace: toolsEnv.SANDBOX_WORKSPACE,
+      });
+
+      return;
+    }
+
+    if (!options.marketService) {
+      throw new Error('marketService is required when SANDBOX_PROVIDER=market');
+    }
+
+    this.service = new MarketSandboxService({
+      fileService: options.fileService,
+      marketService: options.marketService,
+      topicId: options.topicId,
+      userId: options.userId,
+    });
+  }
+
+  async callTool(toolName: string, params: Record<string, any>): Promise<SandboxCallToolResult> {
+    return this.service.callTool(toolName, params);
+  }
+
+  async exportAndUploadFile(path: string, filename: string): Promise<SandboxExportFileResult> {
+    return this.service.exportAndUploadFile(path, filename);
   }
 }

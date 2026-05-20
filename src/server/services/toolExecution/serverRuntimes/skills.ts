@@ -6,17 +6,15 @@ import {
   SkillsExecutionRuntime,
 } from '@lobechat/builtin-tool-skills/executionRuntime';
 import type { SkillItem, SkillListItem, SkillResourceContent } from '@lobechat/types';
-import type { CodeInterpreterToolName } from '@lobehub/market-sdk';
 import debug from 'debug';
-import { sha256 } from 'js-sha256';
 
 import { AgentSkillModel } from '@/database/models/agentSkill';
 import { FileModel } from '@/database/models/file';
 import { UserModel } from '@/database/models/user';
 import { filterBuiltinSkills } from '@/helpers/skillFilters';
-import { FileS3 } from '@/server/modules/S3';
 import { FileService } from '@/server/services/file';
 import { MarketService } from '@/server/services/market';
+import { ServerSandboxService } from '@/server/services/sandbox';
 import { SkillResourceService } from '@/server/services/skill/resource';
 import { preprocessLhCommand } from '@/server/services/toolExecution/preprocessLhCommand';
 
@@ -27,26 +25,26 @@ const log = debug('lobe-server:skills-runtime');
 class SkillServerRuntimeService implements SkillRuntimeService {
   private resourceService: SkillResourceService;
   private skillModel: AgentSkillModel;
-  private marketService: MarketService;
   private fileService: FileService;
   private fileModel: FileModel;
+  private sandboxService: ServerSandboxService;
   private topicId?: string;
   private userId: string;
 
   constructor(options: {
     fileModel: FileModel;
     fileService: FileService;
-    marketService: MarketService;
     resourceService: SkillResourceService;
+    sandboxService: ServerSandboxService;
     skillModel: AgentSkillModel;
     topicId?: string;
     userId: string;
   }) {
     this.skillModel = options.skillModel;
     this.resourceService = options.resourceService;
-    this.marketService = options.marketService;
     this.fileService = options.fileService;
     this.fileModel = options.fileModel;
+    this.sandboxService = options.sandboxService;
     this.topicId = options.topicId;
     this.userId = options.userId;
   }
@@ -82,12 +80,9 @@ class SkillServerRuntimeService implements SkillRuntimeService {
     }
 
     try {
-      const market = this.marketService.market;
-      const response = await market.plugins.runBuildInTool(
-        'runCommand' as any,
-        { command: lhResult.command },
-        { topicId: this.topicId, userId: this.userId },
-      );
+      const response = await this.sandboxService.callTool('runCommand', {
+        command: lhResult.command,
+      });
 
       log('runCommand response: %O', response);
 
@@ -100,7 +95,7 @@ class SkillServerRuntimeService implements SkillRuntimeService {
         };
       }
 
-      const result = response.data?.result || {};
+      const result = response.result || {};
 
       return {
         exitCode: result.exitCode ?? (response.success ? 0 : 1),
@@ -164,11 +159,9 @@ class SkillServerRuntimeService implements SkillRuntimeService {
         }
 
         if (skill.zipFileHash) {
-          // Get S3 key from globalFiles
           const fileInfo = await this.fileModel.checkHash(skill.zipFileHash);
 
           if (fileInfo.isExist && fileInfo.url) {
-            // Convert S3 key to full URL
             const fullUrl = await this.fileService.getFullFileUrl(fileInfo.url);
             if (fullUrl) {
               enhancedParams.zipUrl = fullUrl;
@@ -178,13 +171,7 @@ class SkillServerRuntimeService implements SkillRuntimeService {
         }
       }
 
-      // Call market-sdk's runBuildInTool
-      const market = this.marketService.market;
-      const response = await market.plugins.runBuildInTool(
-        'execScript' as CodeInterpreterToolName,
-        enhancedParams,
-        { topicId: this.topicId, userId: this.userId },
-      );
+      const response = await this.sandboxService.callTool('execScript', enhancedParams);
 
       log('execScript response: %O', response);
 
@@ -197,7 +184,7 @@ class SkillServerRuntimeService implements SkillRuntimeService {
         };
       }
 
-      const result = response.data?.result || {};
+      const result = response.result || {};
 
       return {
         exitCode: result.exitCode ?? (response.success ? 0 : 1),
@@ -222,69 +209,7 @@ class SkillServerRuntimeService implements SkillRuntimeService {
     }
 
     try {
-      const s3 = new FileS3();
-
-      // Use date-based sharding (same as market.ts)
-      const today = new Date().toISOString().split('T')[0];
-      const key = `code-interpreter-exports/${today}/${this.topicId}/${filename}`;
-
-      // Step 1: Generate pre-signed upload URL
-      const uploadUrl = await s3.createPreSignedUrl(key);
-      log('Generated upload URL for key: %s', key);
-
-      // Step 2: Call sandbox's exportFile tool with the upload URL
-      const market = this.marketService.market;
-      const response = await market.plugins.runBuildInTool(
-        'exportFile' as CodeInterpreterToolName,
-        { path, uploadUrl },
-        { topicId: this.topicId, userId: this.userId },
-      );
-
-      log('Sandbox exportFile response: %O', response);
-
-      if (!response.success) {
-        return {
-          filename,
-          success: false,
-        };
-      }
-
-      const result = response.data?.result;
-      const uploadSuccess = result?.success !== false;
-
-      if (!uploadSuccess) {
-        return {
-          filename,
-          success: false,
-        };
-      }
-
-      // Step 3: Get file metadata from S3
-      const metadata = await s3.getFileMetadata(key);
-      const fileSize = metadata.contentLength;
-      const mimeType = metadata.contentType || result?.mimeType || 'application/octet-stream';
-
-      // Step 4: Create persistent file record
-      const fileHash = sha256(key + Date.now().toString());
-
-      const { fileId, url } = await this.fileService.createFileRecord({
-        fileHash,
-        fileType: mimeType,
-        name: filename,
-        size: fileSize,
-        url: key, // Store S3 key
-      });
-
-      log('Created file record: fileId=%s, url=%s', fileId, url);
-
-      return {
-        fileId,
-        filename,
-        mimeType,
-        size: fileSize,
-        success: true,
-        url, // This is the permanent /f:id URL
-      };
+      return await this.sandboxService.exportAndUploadFile(path, filename);
     } catch (error) {
       log('Error exporting file: %O', error);
       return {
@@ -331,12 +256,18 @@ export const skillsRuntime: ServerRuntimeRegistration = {
     });
     const fileService = new FileService(context.serverDB, context.userId);
     const fileModel = new FileModel(context.serverDB, context.userId);
+    const sandboxService = new ServerSandboxService({
+      fileService,
+      marketService,
+      topicId: context.topicId || 'default',
+      userId: context.userId,
+    });
 
     const service = new SkillServerRuntimeService({
       fileModel,
       fileService,
-      marketService,
       resourceService,
+      sandboxService,
       skillModel,
       topicId: context.topicId,
       userId: context.userId,

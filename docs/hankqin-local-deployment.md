@@ -113,6 +113,17 @@ DISABLE_CLOUD_SANDBOX=1
 
 云沙箱和沙箱文件导出依赖 LobeHub Market 授权；本地部署没有可用的 Market OAuth 授权链路时，开启云沙箱会在生成 HTML、报表等文件时出现 `Market authorization expired`。禁用后，HTML 会走对话内 artifact 预览 / 下载路径，不再触发 Market 授权。
 
+如果已经部署了自托管的 `agent-infra/sandbox`，可以改成：
+
+```dotenv
+DISABLE_CLOUD_SANDBOX=0
+SANDBOX_PROVIDER=agent-infra
+SANDBOX_BASE_URL=http:// < sandbox-host > :62981
+SANDBOX_WORKSPACE=/workspace/vite-project
+```
+
+这样 `lobe-cloud-sandbox` 和 `lobe-skills` 的脚本执行都会走本地 sandbox，不再依赖 Market 的 `runBuildInTool(...)`。
+
 Market 能力拆分、Skill Connect 替代方案、Docker sandbox 和 AWS AgentCore Code Interpreter 路线见 [hankqin-market-sandbox-research.md](./hankqin-market-sandbox-research.md)。
 
 当前推荐的最小正式组合：

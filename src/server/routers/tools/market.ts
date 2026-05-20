@@ -1,7 +1,5 @@
-import { type CodeInterpreterToolName } from '@lobehub/market-sdk';
 import { TRPCError } from '@trpc/server';
 import debug from 'debug';
-import { sha256 } from 'js-sha256';
 import { z } from 'zod';
 
 import { AgentSkillModel } from '@/database/models/agentSkill';
@@ -11,7 +9,6 @@ import { authedProcedure, router } from '@/libs/trpc/lambda';
 import { marketUserInfo, serverDatabase, telemetry } from '@/libs/trpc/lambda/middleware';
 import { marketSDK, requireMarketAuth } from '@/libs/trpc/lambda/middleware/marketSDK';
 import { isTrustedClientEnabled } from '@/libs/trusted-client';
-import { FileS3 } from '@/server/modules/S3';
 import { DiscoverService } from '@/server/services/discover';
 import { FileService } from '@/server/services/file';
 import { MarketService } from '@/server/services/market';
@@ -19,6 +16,7 @@ import {
   contentBlocksToString,
   processContentBlocks,
 } from '@/server/services/mcp/contentProcessor';
+import { ServerSandboxService } from '@/server/services/sandbox';
 
 import { scheduleToolCallReport } from './_helpers';
 
@@ -205,51 +203,18 @@ const execInSandboxHandler = async ({
       }
     }
 
-    const market = ctx.marketService.market;
+    const sandboxService = new ServerSandboxService({
+      fileService: ctx.fileService,
+      marketService: ctx.marketService,
+      topicId,
+      userId,
+    });
 
-    const response = await market.plugins.runBuildInTool(
-      toolName as CodeInterpreterToolName,
-      enhancedParams as any,
-      { topicId, userId },
-    );
+    const result = await sandboxService.callTool(toolName, enhancedParams);
 
-    log('execInSandbox response for %s: %O', toolName, response);
+    log('execInSandbox response for %s: %O', toolName, result);
 
-    if (!response.success) {
-      const errorCode = response.error?.code;
-      const errorMessage = response.error?.message || 'Unknown error';
-
-      // Check for authentication errors and throw UNAUTHORIZED to trigger market auth flow
-      if (
-        errorCode === 'invalid_token' ||
-        errorCode === 'token_expired' ||
-        errorCode === 'unauthorized' ||
-        errorMessage.toLowerCase().includes('invalid_token') ||
-        errorMessage.toLowerCase().includes('token expired')
-      ) {
-        throw new TRPCError({
-          code: 'UNAUTHORIZED',
-          message:
-            'Market authorization expired. An authorization dialog has been shown to the user. Please wait for the user to complete authorization and then retry the current task.',
-        });
-      }
-
-      return {
-        error: {
-          message: errorMessage,
-          name: errorCode,
-        },
-        result: null,
-        sessionExpiredAndRecreated: false,
-        success: false,
-      };
-    }
-
-    return {
-      result: response.data?.result,
-      sessionExpiredAndRecreated: response.data?.sessionExpiredAndRecreated || false,
-      success: true,
-    };
+    return result;
   } catch (error) {
     log('execInSandbox error for %s: %O', toolName, error);
 
@@ -646,94 +611,14 @@ export const marketRouter = router({
       log('Exporting and uploading file: %s from path: %s in topic: %s', filename, path, topicId);
 
       try {
-        const s3 = new FileS3();
-
-        // Use date-based sharding for privacy compliance (GDPR, CCPA)
-        const today = new Date().toISOString().split('T')[0];
-
-        // Generate a unique key for the exported file
-        const key = `code-interpreter-exports/${today}/${topicId}/${filename}`;
-
-        // Step 1: Generate pre-signed upload URL
-        const uploadUrl = await s3.createPreSignedUrl(key);
-        log('Generated upload URL for key: %s', key);
-
-        // Step 2: Use MarketService from ctx
-        const market = ctx.marketService.market;
-
-        // Step 3: Call sandbox's exportFile tool with the upload URL
-        const response = await market.plugins.runBuildInTool(
-          'exportFile',
-          { path, uploadUrl },
-          { topicId, userId: ctx.userId },
-        );
-
-        log('Sandbox exportFile response: %O', response);
-
-        if (!response.success) {
-          const errorCode = response.error?.code;
-          const errorMessage = response.error?.message || 'Failed to export file from sandbox';
-
-          // Check for authentication errors and throw UNAUTHORIZED
-          if (
-            errorCode === 'invalid_token' ||
-            errorCode === 'token_expired' ||
-            errorCode === 'unauthorized' ||
-            errorMessage.toLowerCase().includes('invalid_token') ||
-            errorMessage.toLowerCase().includes('token expired')
-          ) {
-            throw new TRPCError({
-              code: 'UNAUTHORIZED',
-              message:
-                'Market authorization expired. An authorization dialog has been shown to the user. Please wait for the user to complete authorization and then retry the current task.',
-            });
-          }
-
-          return {
-            error: { message: errorMessage },
-            filename,
-            success: false,
-          } as ExportAndUploadFileResult;
-        }
-
-        const result = response.data?.result;
-        const uploadSuccess = result?.success !== false;
-
-        if (!uploadSuccess) {
-          return {
-            error: { message: result?.error || 'Failed to upload file from sandbox' },
-            filename,
-            success: false,
-          } as ExportAndUploadFileResult;
-        }
-
-        // Step 4: Get file metadata from S3 to verify upload and get actual size
-        const metadata = await s3.getFileMetadata(key);
-        const fileSize = metadata.contentLength;
-        const mimeType = metadata.contentType || result?.mimeType || 'application/octet-stream';
-
-        // Step 5: Create persistent file record using FileService
-        // Generate a simple hash from the key (since we don't have the actual file content)
-        const fileHash = sha256(key + Date.now().toString());
-
-        const { fileId, url } = await ctx.fileService.createFileRecord({
-          fileHash,
-          fileType: mimeType,
-          name: filename,
-          size: fileSize,
-          url: key, // Store S3 key
+        const sandboxService = new ServerSandboxService({
+          fileService: ctx.fileService,
+          marketService: ctx.marketService,
+          topicId,
+          userId: ctx.userId,
         });
 
-        log('Created file record: fileId=%s, url=%s', fileId, url);
-
-        return {
-          fileId,
-          filename,
-          mimeType,
-          size: fileSize,
-          success: true,
-          url, // This is the permanent /f/:id URL
-        } as ExportAndUploadFileResult;
+        return await sandboxService.exportAndUploadFile(path, filename);
       } catch (error) {
         log('Error in exportAndUploadFile: %O', error);
 
