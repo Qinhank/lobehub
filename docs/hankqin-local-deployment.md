@@ -126,6 +126,8 @@ SANDBOX_WORKSPACE=/workspace/vite-project
 
 Market 能力拆分、Skill Connect 替代方案、Docker sandbox 和 AWS AgentCore Code Interpreter 路线见 [hankqin-market-sandbox-research.md](./hankqin-market-sandbox-research.md)。
 
+如果需要在保留本地自定义逻辑的前提下同步 `lobehub/lobehub` 官方最新代码，操作说明见 [hankqin-upstream-sync.md](./hankqin-upstream-sync.md)。
+
 当前推荐的最小正式组合：
 
 ```text
