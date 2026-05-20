@@ -78,6 +78,7 @@ import { FileService } from '@/server/services/file';
 import { HeterogeneousAgentService } from '@/server/services/heterogeneousAgent';
 import { KlavisService } from '@/server/services/klavis';
 import { MarketService } from '@/server/services/market';
+import { isSandboxEnabled } from '@/server/services/sandbox/config';
 import { deviceProxy } from '@/server/services/toolExecution/deviceProxy';
 
 import { resolveDeviceAccessPolicy } from './deviceAccessPolicy';
@@ -1053,7 +1054,7 @@ export class AiAgentService {
             }
           : undefined,
         disableLocalSystem,
-        enableCloudSandbox: !toolsEnv.DISABLE_CLOUD_SANDBOX,
+        enableCloudSandbox: isSandboxEnabled(),
         globalMemoryEnabled,
         hasAgentDocuments,
         hasEnabledKnowledgeBases,
