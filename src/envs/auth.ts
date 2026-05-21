@@ -86,6 +86,7 @@ declare global {
       // ===== Clawbot Bridge ===== //
       CLAWBOT_ADMIN_EMAIL?: string;
       CLAWBOT_API_URL?: string;
+      CLAWBOT_INVITE_CODE?: string;
 
       /**
        * Internal JWT expiration time for lambda → async calls.

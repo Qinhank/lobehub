@@ -10,6 +10,7 @@ import { type FC, type PropsWithChildren } from 'react';
 import { ProductLogo } from '@/components/Branding';
 import { useIsDark } from '@/hooks/useIsDark';
 
+import AuthBackground from './AuthBackground';
 import AuthLangButton from './AuthLangButton';
 import AuthThemeButton from './AuthThemeButton';
 import { styles } from './style';
@@ -23,12 +24,14 @@ const AuthContainer: FC<PropsWithChildren> = ({ children }) => {
         height={'100%'}
         width={'100%'}
       >
+        <AuthBackground isDark={isDarkMode} />
         <Flexbox
           horizontal
           align={'center'}
           gap={8}
           justify={'space-between'}
           padding={16}
+          style={{ position: 'relative', zIndex: 1 }}
           width={'100%'}
         >
           <Link aria-label={'LobeHub'} href={'/'} style={{ display: 'inline-flex' }}>
@@ -40,10 +43,15 @@ const AuthContainer: FC<PropsWithChildren> = ({ children }) => {
             <AuthThemeButton size={18} />
           </Flexbox>
         </Flexbox>
-        <Center height={'100%'} padding={16} width={'100%'}>
+        <Center
+          height={'100%'}
+          padding={16}
+          style={{ position: 'relative', zIndex: 1 }}
+          width={'100%'}
+        >
           {children}
         </Center>
-        <Center padding={24}>
+        <Center padding={24} style={{ position: 'relative', zIndex: 1 }}>
           <Text align={'center'} type={'secondary'}>
             {COPYRIGHT_FULL}
           </Text>

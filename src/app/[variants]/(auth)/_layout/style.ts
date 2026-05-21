@@ -14,7 +14,7 @@ export const styles = createStaticStyles(({ css, cssVar }) => ({
     border: 1px solid ${cssVar.colorBorderSecondary};
     border-radius: ${cssVar.borderRadius};
 
-    background: ${cssVar.colorBgContainer};
+    background: linear-gradient(135deg, #0a0e1a 0%, #111827 50%, #0f172a 100%);
   `,
 
   // Inner container - light mode
@@ -26,7 +26,7 @@ export const styles = createStaticStyles(({ css, cssVar }) => ({
     border: 1px solid ${cssVar.colorBorder};
     border-radius: ${cssVar.borderRadius};
 
-    background: ${cssVar.colorBgContainer};
+    background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 50%, #f1f5f9 100%);
   `,
 
   // Outer container

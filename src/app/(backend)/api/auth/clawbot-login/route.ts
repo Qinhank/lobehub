@@ -1,74 +1,7 @@
-import { randomBytes } from 'node:crypto';
-
-import { idGenerator } from '@lobechat/database';
-import { eq } from 'drizzle-orm';
-import { cookies } from 'next/headers';
 import { type NextRequest, NextResponse } from 'next/server';
 
-import { account, session } from '@/database/schemas/betterAuth';
-import { users } from '@/database/schemas/user';
-import { serverDB } from '@/database/server';
-
 const CLAWBOT_API_URL = process.env.CLAWBOT_API_URL;
-const CLAWBOT_ADMIN_EMAIL = process.env.CLAWBOT_ADMIN_EMAIL || 'admin@clawbot.local';
-
-async function createBetterAuthSession(req: NextRequest, email: string, displayName: string) {
-  let [user] = await serverDB
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.email, email))
-    .limit(1);
-
-  if (!user) {
-    const userId = idGenerator('user', 27);
-    const now = new Date();
-    await serverDB.insert(users).values({
-      createdAt: now,
-      email,
-      emailVerified: true,
-      fullName: displayName,
-      id: userId,
-      lastActiveAt: now,
-      updatedAt: now,
-    });
-
-    await serverDB.insert(account).values({
-      accountId: email,
-      createdAt: now,
-      id: randomBytes(9).toString('base64url'),
-      password: '',
-      providerId: 'clawbot',
-      updatedAt: now,
-      userId,
-    });
-
-    user = { id: userId };
-  }
-
-  const sessionToken = randomBytes(24).toString('base64url');
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-  const now = new Date();
-
-  await serverDB.insert(session).values({
-    createdAt: now,
-    expiresAt,
-    id: randomBytes(9).toString('base64url'),
-    ipAddress: req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || '',
-    token: sessionToken,
-    updatedAt: now,
-    userAgent: req.headers.get('user-agent') || '',
-    userId: user.id,
-  });
-
-  const cookieStore = await cookies();
-  cookieStore.set('better-auth.session_token', sessionToken, {
-    expires: expiresAt,
-    httpOnly: true,
-    path: '/',
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
-  });
-}
+const CLAWBOT_INVITE_CODE = process.env.CLAWBOT_INVITE_CODE;
 
 export async function POST(req: NextRequest) {
   if (!CLAWBOT_API_URL) {
@@ -86,18 +19,26 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ message: '请输入密码' }, { status: 400 });
       }
 
-      const res = await fetch(`${CLAWBOT_API_URL}/api/users/admin/login`, {
+      const loginRes = await fetch(`${CLAWBOT_API_URL}/api/users/admin/login`, {
         body: JSON.stringify({ password }),
         headers: { 'Content-Type': 'application/json' },
         method: 'POST',
       });
-      const data = await res.json();
-      if (!res.ok) {
-        return NextResponse.json({ message: data.message || '登录失败' }, { status: 401 });
+      const loginData = await loginRes.json();
+      if (!loginRes.ok) {
+        return NextResponse.json({ message: loginData.message || '登录失败' }, { status: 401 });
       }
 
-      await createBetterAuthSession(req, CLAWBOT_ADMIN_EMAIL, data.user?.displayName || '管理员');
-      return NextResponse.json({ success: true });
+      // Use clawbot token to get SSO ticket
+      const ssoRes = await fetch(`${CLAWBOT_API_URL}/api/users/sso/lobehub`, {
+        headers: { Authorization: `Bearer ${loginData.token}` },
+      });
+      const ssoData = await ssoRes.json();
+      if (!ssoRes.ok || !ssoData.url) {
+        return NextResponse.json({ message: ssoData.message || 'SSO 启动失败' }, { status: 500 });
+      }
+
+      return NextResponse.json({ success: true, url: ssoData.url });
     }
 
     // Action: request wechat verification code
@@ -127,19 +68,104 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ message: '微信号和验证码不能为空' }, { status: 400 });
       }
 
-      const res = await fetch(`${CLAWBOT_API_URL}/api/wechat/auth/verify-code`, {
+      const verifyRes = await fetch(`${CLAWBOT_API_URL}/api/wechat/auth/verify-code`, {
         body: JSON.stringify({ code, wechatId }),
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+      });
+      const verifyData = await verifyRes.json();
+      if (!verifyRes.ok) {
+        return NextResponse.json({ message: verifyData.message || '验证失败' }, { status: 401 });
+      }
+
+      // Use wechat token to get SSO ticket
+      const ssoRes = await fetch(`${CLAWBOT_API_URL}/api/users/sso/lobehub`, {
+        headers: { Authorization: `Bearer ${verifyData.token}` },
+      });
+      const ssoData = await ssoRes.json();
+      if (!ssoRes.ok || !ssoData.url) {
+        return NextResponse.json({ message: ssoData.message || 'SSO 启动失败' }, { status: 500 });
+      }
+
+      return NextResponse.json({ success: true, url: ssoData.url });
+    }
+
+    // Action: validate invite code
+    if (action === 'validate-invite') {
+      const { inviteCode } = body;
+      if (!CLAWBOT_INVITE_CODE) {
+        return NextResponse.json({ message: '邀请码未配置' }, { status: 500 });
+      }
+      if (!inviteCode || inviteCode !== CLAWBOT_INVITE_CODE) {
+        return NextResponse.json({ message: '邀请码无效' }, { status: 403 });
+      }
+      return NextResponse.json({ success: true });
+    }
+
+    // Action: start wechat QR registration (requires invite code)
+    if (action === 'register-login') {
+      const { inviteCode, wechatId } = body;
+      if (!CLAWBOT_INVITE_CODE || inviteCode !== CLAWBOT_INVITE_CODE) {
+        return NextResponse.json({ message: '邀请码无效' }, { status: 403 });
+      }
+      if (!wechatId || typeof wechatId !== 'string') {
+        return NextResponse.json({ message: '请输入微信号' }, { status: 400 });
+      }
+
+      const res = await fetch(`${CLAWBOT_API_URL}/api/wechat/login`, {
+        body: JSON.stringify({ wechatId }),
         headers: { 'Content-Type': 'application/json' },
         method: 'POST',
       });
       const data = await res.json();
       if (!res.ok) {
-        return NextResponse.json({ message: data.message || '验证失败' }, { status: 401 });
+        return NextResponse.json(
+          { message: data.message || '注册请求失败' },
+          { status: res.status },
+        );
+      }
+      return NextResponse.json({
+        message: data.message,
+        qrcodeDataUrl: data.qrcodeDataUrl,
+        status: data.status,
+        success: true,
+      });
+    }
+
+    // Action: poll wechat registration status
+    if (action === 'register-status') {
+      const { wechatId } = body;
+      if (!wechatId || typeof wechatId !== 'string') {
+        return NextResponse.json({ message: '请输入微信号' }, { status: 400 });
       }
 
-      const email = `${wechatId}@wechat.clawbot.local`;
-      await createBetterAuthSession(req, email, data.user?.displayName || wechatId);
-      return NextResponse.json({ success: true });
+      const res = await fetch(
+        `${CLAWBOT_API_URL}/api/wechat/status?wechatId=${encodeURIComponent(wechatId)}`,
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        return NextResponse.json(
+          { message: data.message || '状态查询失败' },
+          { status: res.status },
+        );
+      }
+      return NextResponse.json(data);
+    }
+
+    // Action: stop wechat bot connection
+    if (action === 'register-stop') {
+      const { wechatId } = body;
+      if (!wechatId || typeof wechatId !== 'string') {
+        return NextResponse.json({ message: '请输入微信号' }, { status: 400 });
+      }
+
+      const res = await fetch(`${CLAWBOT_API_URL}/api/wechat/stop`, {
+        body: JSON.stringify({ wechatId }),
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+      });
+      const data = await res.json();
+      return NextResponse.json(data);
     }
 
     return NextResponse.json({ message: '无效的操作' }, { status: 400 });
