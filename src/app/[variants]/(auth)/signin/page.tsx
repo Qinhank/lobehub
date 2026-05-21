@@ -5,10 +5,12 @@ import { type InputRef } from 'antd';
 import { Form, message } from 'antd';
 import { cssVar } from 'antd-style';
 import { ChevronRight, Lock, MessageCircle } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 
 import Loading from '@/components/Loading/BrandTextLoading';
 import AuthCard from '@/features/AuthCard';
+import { signIn } from '@/libs/better-auth/auth-client';
 
 type AuthMode = 'admin' | 'wechat';
 type WechatMode = 'login' | 'register';
@@ -16,6 +18,7 @@ type CodeStep = 'input' | 'request';
 type BotStatus = 'error' | 'idle' | 'online' | 'waiting_scan';
 
 const ClawbotSignIn = () => {
+  const searchParams = useSearchParams();
   const [authMode, setAuthMode] = useState<AuthMode>('wechat');
   const [wechatMode, setWechatMode] = useState<WechatMode>('login');
   const [codeStep, setCodeStep] = useState<CodeStep>('request');
@@ -35,6 +38,37 @@ const ClawbotSignIn = () => {
   const [registerMessage, setRegisterMessage] = useState('');
   const [registerLoading, setRegisterLoading] = useState(false);
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const autoSsoStartedRef = useRef(false);
+  const [ssoLoading, setSsoLoading] = useState(false);
+
+  // Auto-trigger OIDC flow when hankqin_sso_ticket is in URL
+  useEffect(() => {
+    const ticket = searchParams.get('hankqin_sso_ticket');
+    if (!ticket || autoSsoStartedRef.current) return;
+    autoSsoStartedRef.current = true;
+    setSsoLoading(true);
+    const callbackUrl = searchParams.get('callbackUrl') || '/';
+    signIn
+      .oauth2({
+        additionalData: { hankqin_sso_ticket: ticket },
+        callbackURL: callbackUrl,
+        providerId: 'generic-oidc',
+      })
+      .then((result) => {
+        if (result && 'error' in result && result.error) {
+          console.error('SSO oauth2 error:', result.error);
+          message.error(`SSO 登录失败: ${result.error.message || '未知错误'}`);
+          setSsoLoading(false);
+          autoSsoStartedRef.current = false;
+        }
+      })
+      .catch((err) => {
+        console.error('SSO oauth2 exception:', err);
+        message.error('SSO 登录异常，请重试');
+        setSsoLoading(false);
+        autoSsoStartedRef.current = false;
+      });
+  }, [searchParams]);
 
   useEffect(() => {
     if (authMode === 'admin') passwordInputRef.current?.focus();
@@ -252,6 +286,16 @@ const ClawbotSignIn = () => {
   });
 
   // --- RENDER ---
+  if (ssoLoading) {
+    return (
+      <AuthCard subtitle="正在完成登录..." title="SSO 授权中">
+        <div style={{ padding: '40px 0', textAlign: 'center' }}>
+          <Loading debugId="SSO" />
+        </div>
+      </AuthCard>
+    );
+  }
+
   return (
     <AuthCard subtitle="登录以继续使用" title="欢迎使用">
       <div
@@ -502,10 +546,10 @@ const ClawbotSignIn = () => {
                                 size="large"
                                 style={{ fontFamily: 'monospace', padding: 6 }}
                                 value={verifyCode}
+                                onPressEnter={handleVerifyCode}
                                 onChange={(e) =>
                                   setVerifyCode(e.target.value.replaceAll(/\D/g, ''))
                                 }
-                                onPressEnter={handleVerifyCode}
                               />
                             </Form.Item>
                             <Button
