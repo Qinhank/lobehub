@@ -20,6 +20,10 @@ type DecryptUserKeyVaults = (encryptKeyVaultsStr: string | null) => Promise<any>
 
 type EncryptUserKeyVaults = (keyVaults: string) => Promise<string>;
 
+interface GetAiProviderByIdOptions {
+  initBuiltin?: boolean;
+}
+
 export class AiProviderModel {
   private userId: string;
   private db: LobeChatDatabase;
@@ -197,7 +201,9 @@ export class AiProviderModel {
   getAiProviderById = async (
     id: string,
     decryptor?: DecryptUserKeyVaults,
+    options: GetAiProviderByIdOptions = {},
   ): Promise<AiProviderDetailItem | undefined> => {
+    const { initBuiltin = true } = options;
     const query = this.db
       .select({
         checkModel: aiProviders.checkModel,
@@ -220,7 +226,7 @@ export class AiProviderModel {
 
     if (!result) {
       // if the provider is builtin but not init, we will insert it to the db
-      if (this.isBuiltInProvider(id)) {
+      if (initBuiltin && this.isBuiltInProvider(id)) {
         await this.db
           .insert(aiProviders)
           .values({ id, source: 'builtin', userId: this.userId })

@@ -83,6 +83,10 @@ declare global {
       AUTH_ZITADEL_ISSUER?: string;
       AUTH_ZITADEL_SECRET?: string;
 
+      // ===== Clawbot Bridge ===== //
+      CLAWBOT_ADMIN_EMAIL?: string;
+      CLAWBOT_API_URL?: string;
+
       /**
        * Internal JWT expiration time for lambda → async calls.
        * Format: number followed by unit (s=seconds, m=minutes, h=hours)

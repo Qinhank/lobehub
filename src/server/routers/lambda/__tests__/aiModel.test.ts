@@ -1,13 +1,18 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AiModelModel } from '@/database/models/aiModel';
 import { AiInfraRepos } from '@/database/repositories/aiInfra';
+import {
+  assertCanMutateSharedAiProvider,
+  resolveSharedAiProviderAccess,
+} from '@/server/modules/SharedAiProvider';
 
 import { aiModelRouter } from '../aiModel';
 
 vi.mock('@/database/models/aiModel');
 vi.mock('@/database/models/user');
 vi.mock('@/database/repositories/aiInfra');
+vi.mock('@/server/modules/SharedAiProvider');
 vi.mock('@/server/globalConfig', () => ({
   getServerGlobalConfig: vi.fn().mockReturnValue({
     aiProvider: {},
@@ -27,6 +32,14 @@ describe('aiModelRouter', () => {
     userId: 'test-user',
   };
 
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(resolveSharedAiProviderAccess).mockResolvedValue({
+      isSharedProviderAdmin: false,
+    });
+    vi.mocked(assertCanMutateSharedAiProvider).mockResolvedValue(undefined);
+  });
+
   it('should create ai model', async () => {
     const mockCreate = vi.fn().mockResolvedValue({ id: 'model-1' });
     vi.mocked(AiModelModel).mockImplementation(
@@ -44,6 +57,12 @@ describe('aiModelRouter', () => {
     });
 
     expect(result).toBe('model-1');
+    expect(assertCanMutateSharedAiProvider).toHaveBeenCalledWith(
+      expect.anything(),
+      mockCtx.userId,
+      'test-provider',
+      { isSharedProviderAdmin: false },
+    );
     expect(mockCreate).toHaveBeenCalledWith({
       id: 'test-model',
       providerId: 'test-provider',
@@ -93,6 +112,7 @@ describe('aiModelRouter', () => {
       enabled: undefined,
       limit: undefined,
       offset: undefined,
+      type: undefined,
     });
   });
 

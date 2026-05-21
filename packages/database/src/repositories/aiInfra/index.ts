@@ -2,6 +2,7 @@ import { BRANDING_PROVIDER } from '@lobechat/business-const';
 import type {
   AiProviderDetailItem,
   AiProviderListItem,
+  AiProviderRuntimeConfig,
   AiProviderRuntimeState,
   EnabledProvider,
   ProviderConfig,
@@ -20,6 +21,46 @@ import { AiProviderModel } from '../../models/aiProvider';
 import type { LobeChatDatabase } from '../../type';
 
 type DecryptUserKeyVaults = (encryptKeyVaultsStr: string | null) => Promise<any>;
+
+interface AiInfraReposOptions {
+  isSharedProviderAdmin?: boolean;
+  sharedProviderUserId?: string;
+}
+
+const hasKeyVaults = <T extends { keyVaults?: Record<string, unknown> }>(
+  runtimeConfig: T | undefined,
+): runtimeConfig is T & { keyVaults: AiProviderRuntimeConfig['keyVaults'] } =>
+  !!runtimeConfig?.keyVaults && !isEmpty(runtimeConfig.keyVaults);
+
+const sanitizeSharedRuntimeConfig = (config: AiProviderRuntimeConfig): AiProviderRuntimeConfig => ({
+  ...config,
+  fetchOnClient: false,
+  keyVaults: {},
+});
+
+const getModelIdentity = (model: Pick<EnabledAiModel, 'id' | 'providerId'>) =>
+  `${model.providerId}:${model.id}`;
+
+const mergeAiModelsByProvider = (
+  baseModels: EnabledAiModel[],
+  userModels: EnabledAiModel[],
+): EnabledAiModel[] => {
+  const modelsMap = new Map<string, EnabledAiModel>();
+
+  for (const model of baseModels) {
+    modelsMap.set(getModelIdentity(model), model);
+  }
+
+  for (const model of userModels) {
+    const existing = modelsMap.get(getModelIdentity(model));
+    modelsMap.set(
+      getModelIdentity(model),
+      existing ? (merge(existing, model) as EnabledAiModel) : model,
+    );
+  }
+
+  return [...modelsMap.values()];
+};
 
 const normalizeProvider = (provider: string) => provider.toLowerCase();
 
@@ -137,24 +178,66 @@ export class AiInfraRepos {
   aiProviderModel: AiProviderModel;
   private readonly providerConfigs: Record<string, ProviderConfig>;
   aiModelModel: AiModelModel;
+  private readonly sharedAiModelModel?: AiModelModel;
+  private readonly sharedAiProviderModel?: AiProviderModel;
 
   constructor(
     db: LobeChatDatabase,
     userId: string,
     providerConfigs: Record<string, ProviderConfig>,
+    options: AiInfraReposOptions = {},
   ) {
     this.userId = userId;
     this.db = db;
     this.aiProviderModel = new AiProviderModel(db, userId);
     this.aiModelModel = new AiModelModel(db, userId);
     this.providerConfigs = providerConfigs;
+
+    if (options.sharedProviderUserId && !options.isSharedProviderAdmin) {
+      this.sharedAiProviderModel = new AiProviderModel(db, options.sharedProviderUserId);
+      this.sharedAiModelModel = new AiModelModel(db, options.sharedProviderUserId);
+    }
   }
+
+  private getSharedAiProviderList = async () => {
+    if (!this.sharedAiProviderModel) return [];
+
+    return this.sharedAiProviderModel.getAiProviderList();
+  };
+
+  private getSharedRuntimeConfig = async (decryptor?: DecryptUserKeyVaults) => {
+    if (!this.sharedAiProviderModel) return {};
+
+    return this.sharedAiProviderModel.getAiProviderRuntimeConfig(decryptor);
+  };
+
+  private getAllModels = async () => {
+    const [sharedModels, userModels] = await Promise.all([
+      this.sharedAiModelModel?.getAllModels() ?? Promise.resolve([]),
+      this.aiModelModel.getAllModels(),
+    ]);
+
+    return mergeAiModelsByProvider(sharedModels, userModels);
+  };
+
+  private getModelListByProviderId = async (providerId: string) => {
+    const [sharedModels, userModels] = await Promise.all([
+      this.sharedAiModelModel?.getModelListByProviderId(providerId) ?? Promise.resolve([]),
+      this.aiModelModel.getModelListByProviderId(providerId),
+    ]);
+
+    return mergeArrayById(sharedModels, userModels) as AiProviderModelListItem[];
+  };
 
   /**
    * Calculate the final providerList based on the known providerConfig
    */
   getAiProviderList = async () => {
-    const userProviders = await this.aiProviderModel.getAiProviderList();
+    const [sharedProviders, userProviders] = await Promise.all([
+      this.getSharedAiProviderList(),
+      this.aiProviderModel.getAiProviderList(),
+    ]);
+    const allUserProviders = mergeArrayById(sharedProviders, userProviders);
 
     // 1. First create a mapping based on DEFAULT_MODEL_PROVIDER_LIST id order
     const orderMap = new Map(DEFAULT_MODEL_PROVIDER_LIST.map((item, index) => [item.id, index]));
@@ -162,14 +245,14 @@ export class AiInfraRepos {
     const builtinProviders = DEFAULT_MODEL_PROVIDER_LIST.map((item) => ({
       description: item.description,
       enabled:
-        userProviders.some((provider) => provider.id === item.id && provider.enabled) ||
+        allUserProviders.some((provider) => provider.id === item.id && provider.enabled) ||
         this.providerConfigs[item.id]?.enabled,
       id: item.id,
       name: item.name,
       source: 'builtin',
     })) as AiProviderListItem[];
 
-    const mergedProviders = mergeArrayById(builtinProviders, userProviders);
+    const mergedProviders = mergeArrayById(builtinProviders, allUserProviders);
 
     // 3. Sort based on orderMap
     return mergedProviders.sort((a, b) => {
@@ -203,7 +286,7 @@ export class AiInfraRepos {
   getEnabledModels = async (filterEnabled: boolean = true) => {
     const [providers, allModels] = await Promise.all([
       this.getAiProviderList(),
-      this.aiModelModel.getAllModels(),
+      this.getAllModels(),
     ]);
     const enabledProviders = providers.filter((item) => (filterEnabled ? item.enabled : true));
 
@@ -270,11 +353,30 @@ export class AiInfraRepos {
   getAiProviderRuntimeState = async (
     decryptor?: DecryptUserKeyVaults,
   ): Promise<AiProviderRuntimeState> => {
-    const [result, enabledAiProviders, allModels] = await Promise.all([
-      this.aiProviderModel.getAiProviderRuntimeConfig(decryptor),
-      this.getUserEnabledProviderList(),
-      this.getEnabledModels(false),
-    ]);
+    const [userRuntimeConfig, sharedRuntimeConfig, enabledAiProviders, allModels] =
+      await Promise.all([
+        this.aiProviderModel.getAiProviderRuntimeConfig(decryptor),
+        this.getSharedRuntimeConfig(decryptor),
+        this.getUserEnabledProviderList(),
+        this.getEnabledModels(false),
+      ]);
+
+    const result = { ...sharedRuntimeConfig, ...userRuntimeConfig };
+    Object.entries(sharedRuntimeConfig).forEach(([key, value]) => {
+      const userValue = userRuntimeConfig[key];
+
+      if (hasKeyVaults(userValue)) {
+        result[key] = {
+          ...(merge(value, userValue) as AiProviderRuntimeConfig),
+          keyVaults: userValue.keyVaults,
+        };
+        return;
+      }
+
+      result[key] = sanitizeSharedRuntimeConfig(
+        merge(value, userValue || {}) as AiProviderRuntimeConfig,
+      );
+    });
 
     const runtimeConfig = { ...result };
     Object.entries(result).forEach(([key, value]) => {
@@ -424,7 +526,7 @@ export class AiInfraRepos {
       type?: string;
     },
   ) => {
-    const aiModels = await this.aiModelModel.getModelListByProviderId(providerId);
+    const aiModels = await this.getModelListByProviderId(providerId);
 
     const defaultModels: AiProviderModelListItem[] =
       (await this.fetchBuiltinModels(providerId)) || [];
@@ -475,9 +577,47 @@ export class AiInfraRepos {
    * use in the `/settings/provider/[id]` page
    */
   getAiProviderDetail = async (id: string, decryptor?: DecryptUserKeyVaults) => {
-    const config = await this.aiProviderModel.getAiProviderById(id, decryptor);
+    const [sharedConfig, userConfig] = await Promise.all([
+      this.sharedAiProviderModel?.getAiProviderById(id, decryptor, { initBuiltin: false }) ??
+        Promise.resolve(undefined),
+      this.aiProviderModel.getAiProviderById(id, decryptor, { initBuiltin: false }),
+    ]);
 
-    return merge(this.providerConfigs[id] || {}, config || {}) as AiProviderDetailItem;
+    const providerConfig = this.providerConfigs[id] || {};
+
+    if (sharedConfig) {
+      const sharedPublicConfig = {
+        ...sharedConfig,
+        fetchOnClient: false,
+        keyVaults: {},
+      } as AiProviderDetailItem;
+
+      const mergedSharedConfig = merge(providerConfig, sharedPublicConfig) as AiProviderDetailItem;
+
+      if (!userConfig) {
+        return {
+          ...mergedSharedConfig,
+          fetchOnClient: false,
+          keyVaults: {},
+        };
+      }
+
+      const mergedConfig = merge(mergedSharedConfig, userConfig) as AiProviderDetailItem;
+
+      if (!hasKeyVaults(userConfig)) {
+        return {
+          ...mergedConfig,
+          fetchOnClient: false,
+          keyVaults: {},
+        };
+      }
+
+      return mergedConfig;
+    }
+
+    const config = userConfig || (await this.aiProviderModel.getAiProviderById(id, decryptor));
+
+    return merge(providerConfig, config || {}) as AiProviderDetailItem;
   };
 
   /**

@@ -79,6 +79,34 @@ describe('AiInfraRepos', () => {
       );
     });
 
+    it('should include shared admin models for normal users', async () => {
+      repo = new AiInfraRepos(serverDB, userId, mockProviderConfigs, {
+        sharedProviderUserId: 'shared-admin-id',
+      });
+
+      vi.spyOn(repo.aiModelModel, 'getModelListByProviderId').mockResolvedValue([]);
+      vi.spyOn((repo as any).sharedAiModelModel, 'getModelListByProviderId').mockResolvedValue([
+        {
+          displayName: 'Shared Model',
+          enabled: true,
+          id: 'shared-model',
+          type: 'chat',
+        },
+      ]);
+      vi.spyOn(repo as any, 'fetchBuiltinModels').mockResolvedValue([]);
+
+      const result = await repo.getAiProviderModelList('shared-custom');
+
+      expect(result).toContainEqual(
+        expect.objectContaining({
+          displayName: 'Shared Model',
+          enabled: true,
+          id: 'shared-model',
+          type: 'chat',
+        }),
+      );
+    });
+
     it('should use builtin models', async () => {
       const providerId = 'ai21';
 

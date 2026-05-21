@@ -1,26 +1,28 @@
-import { type GoogleGenAIOptions } from '@google/genai';
-import { ModelRuntime, type ModelRuntimeHooks } from '@lobechat/model-runtime';
+import type { GoogleGenAIOptions } from '@google/genai';
+import type { ModelRuntimeHooks } from '@lobechat/model-runtime';
+import { ModelRuntime } from '@lobechat/model-runtime';
 import { LobeVertexAI } from '@lobechat/model-runtime/vertexai';
-import {
-  type AWSBedrockKeyVault,
-  type AzureOpenAIKeyVault,
-  type ClientSecretPayload,
-  type CloudflareKeyVault,
-  type ComfyUIKeyVault,
-  type GithubCopilotKeyVault,
-  type OpenAICompatibleKeyVault,
-  type VertexAIKeyVault,
+import type {
+  AWSBedrockKeyVault,
+  AzureOpenAIKeyVault,
+  ClientSecretPayload,
+  CloudflareKeyVault,
+  ComfyUIKeyVault,
+  GithubCopilotKeyVault,
+  OpenAICompatibleKeyVault,
+  VertexAIKeyVault,
 } from '@lobechat/types';
 import { safeParseJSON } from '@lobechat/utils';
 import { ModelProvider } from 'model-bank';
 
 import { getBusinessModelRuntimeHooks } from '@/business/server/model-runtime';
 import { AiProviderModel } from '@/database/models/aiProvider';
-import { type LobeChatDatabase } from '@/database/type';
+import type { LobeChatDatabase } from '@/database/type';
 import { getLLMConfig } from '@/envs/llm';
 import { resolveServerUrl } from '@/server/utils/resolveServerUrl';
 
 import { KeyVaultsGateKeeper } from '../KeyVaultsEncrypt';
+import { resolveSharedAiProviderAccess } from '../SharedAiProvider';
 import apiKeyManager from './apiKeyManager';
 
 export * from './trace';
@@ -35,6 +37,71 @@ type ProviderKeyVaults = OpenAICompatibleKeyVault &
   ComfyUIKeyVault &
   GithubCopilotKeyVault &
   VertexAIKeyVault;
+
+interface ProviderRuntimeConfig {
+  keyVaults?: Record<string, unknown>;
+  settings?: {
+    sdkType?: string;
+  };
+}
+
+const hasProviderKeyVaults = (keyVaults: Record<string, unknown> | undefined): boolean =>
+  !!keyVaults &&
+  Object.values(keyVaults).some((value) => {
+    if (typeof value === 'string') return value.trim().length > 0;
+    return value !== undefined && value !== null;
+  });
+
+const mergeProviderRuntimeConfig = (
+  sharedConfig: ProviderRuntimeConfig,
+  userConfig: ProviderRuntimeConfig,
+): ProviderRuntimeConfig => ({
+  ...sharedConfig,
+  ...userConfig,
+  keyVaults: userConfig.keyVaults || {},
+  settings: {
+    ...sharedConfig.settings,
+    ...userConfig.settings,
+  },
+});
+
+const getProviderConfigForRuntime = async (
+  db: LobeChatDatabase,
+  userId: string,
+  provider: string,
+): Promise<ProviderRuntimeConfig | undefined> => {
+  const aiProviderModel = new AiProviderModel(db, userId);
+  const providerConfig = await aiProviderModel.getAiProviderById(
+    provider,
+    KeyVaultsGateKeeper.getUserKeyVaults,
+  );
+
+  const hasUserKeyVaults = hasProviderKeyVaults(providerConfig?.keyVaults);
+
+  const { isSharedProviderAdmin, sharedProviderUserId } = await resolveSharedAiProviderAccess(
+    db,
+    userId,
+  );
+
+  if (!sharedProviderUserId || isSharedProviderAdmin) return providerConfig;
+
+  const sharedAiProviderModel = new AiProviderModel(db, sharedProviderUserId);
+  const sharedProviderConfig = await sharedAiProviderModel.getAiProviderById(
+    provider,
+    KeyVaultsGateKeeper.getUserKeyVaults,
+    { initBuiltin: false },
+  );
+
+  if (hasUserKeyVaults && providerConfig) {
+    return sharedProviderConfig
+      ? mergeProviderRuntimeConfig(sharedProviderConfig, providerConfig)
+      : providerConfig;
+  }
+
+  return hasProviderKeyVaults(sharedProviderConfig?.keyVaults)
+    ? sharedProviderConfig
+    : providerConfig;
+};
 
 /**
  * Resolve the runtime provider for a given provider.
@@ -402,14 +469,7 @@ export const initModelRuntimeFromDB = async (
   userId: string,
   provider: string,
 ): Promise<ModelRuntime> => {
-  // 1. Get user's provider configuration from database
-  const aiProviderModel = new AiProviderModel(db, userId);
-
-  // Use getAiProviderById with KeyVaultsGateKeeper.getUserKeyVaults as decryptor
-  const providerConfig = await aiProviderModel.getAiProviderById(
-    provider,
-    KeyVaultsGateKeeper.getUserKeyVaults,
-  );
+  const providerConfig = await getProviderConfigForRuntime(db, userId, provider);
 
   // 2. Resolve the runtime provider for custom providers
   // For custom providers, use sdkType from settings (defaults to 'openai')

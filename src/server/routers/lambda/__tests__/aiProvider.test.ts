@@ -5,12 +5,18 @@ import { AiProviderModel } from '@/database/models/aiProvider';
 import { AiInfraRepos } from '@/database/repositories/aiInfra';
 import { getServerGlobalConfig } from '@/server/globalConfig';
 import { KeyVaultsGateKeeper } from '@/server/modules/KeyVaultsEncrypt';
-import { type AiProviderDetailItem, type AiProviderRuntimeState } from '@/types/aiProvider';
+import {
+  assertCanMutateSharedAiProvider,
+  assertCanMutateSharedAiProviders,
+  resolveSharedAiProviderAccess,
+} from '@/server/modules/SharedAiProvider';
+import type { AiProviderDetailItem, AiProviderRuntimeState } from '@/types/aiProvider';
 
 import { aiProviderRouter } from '../aiProvider';
 
 vi.mock('@/server/globalConfig');
 vi.mock('@/server/modules/KeyVaultsEncrypt');
+vi.mock('@/server/modules/SharedAiProvider');
 vi.mock('@/database/repositories/aiInfra');
 vi.mock('@/database/models/aiProvider');
 vi.mock('@/database/models/user');
@@ -52,6 +58,11 @@ describe('aiProviderRouter', () => {
     } as any);
 
     vi.mocked(KeyVaultsGateKeeper.initWithEnvKey).mockResolvedValue(mockGateKeeper as any);
+    vi.mocked(resolveSharedAiProviderAccess).mockResolvedValue({
+      isSharedProviderAdmin: false,
+    });
+    vi.mocked(assertCanMutateSharedAiProvider).mockResolvedValue(undefined);
+    vi.mocked(assertCanMutateSharedAiProviders).mockResolvedValue(undefined);
   });
 
   const createMockContext = () => ({
@@ -77,6 +88,25 @@ describe('aiProviderRouter', () => {
           name: 'Test Provider',
         }),
         mockGateKeeper.encrypt,
+      );
+    });
+
+    it('should check shared provider mutation permission before creating', async () => {
+      const mockCreate = vi.fn().mockResolvedValue({ id: mockProviderId });
+      vi.mocked(AiProviderModel).prototype.create = mockCreate;
+
+      const caller = aiProviderRouter.createCaller(createMockContext());
+      await caller.createAiProvider({
+        id: mockProviderId,
+        name: 'Test Provider',
+        source: 'custom',
+      });
+
+      expect(assertCanMutateSharedAiProvider).toHaveBeenCalledWith(
+        expect.anything(),
+        mockUserId,
+        mockProviderId,
+        { isSharedProviderAdmin: false },
       );
     });
   });

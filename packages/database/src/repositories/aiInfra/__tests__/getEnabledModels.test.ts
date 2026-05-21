@@ -48,6 +48,39 @@ describe('AiInfraRepos', () => {
       });
     });
 
+    it('should include shared admin models for normal users', async () => {
+      repo = new AiInfraRepos(serverDB, userId, mockProviderConfigs, {
+        sharedProviderUserId: 'shared-admin-id',
+      });
+
+      const mockProviders = [
+        { enabled: true, id: 'shared-custom', name: 'Shared Custom', source: 'custom' },
+      ] as AiProviderListItem[];
+
+      vi.spyOn(repo, 'getAiProviderList').mockResolvedValue(mockProviders);
+      vi.spyOn(repo.aiModelModel, 'getAllModels').mockResolvedValue([]);
+      vi.spyOn((repo as any).sharedAiModelModel, 'getAllModels').mockResolvedValue([
+        {
+          enabled: true,
+          id: 'shared-model',
+          providerId: 'shared-custom',
+          type: 'chat',
+        },
+      ]);
+      vi.spyOn(repo as any, 'fetchBuiltinModels').mockResolvedValue([]);
+
+      const result = await repo.getEnabledModels();
+
+      expect(result).toContainEqual(
+        expect.objectContaining({
+          enabled: true,
+          id: 'shared-model',
+          providerId: 'shared-custom',
+          type: 'chat',
+        }),
+      );
+    });
+
     it('should merge builtin and user models correctly', async () => {
       const mockProviders = [
         { enabled: true, id: 'openai', name: 'OpenAI', sort: 1, source: 'builtin' as const },

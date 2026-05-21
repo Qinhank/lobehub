@@ -59,5 +59,32 @@ describe('AiInfraRepos', () => {
         ),
       );
     });
+
+    it('should include shared admin providers for normal users', async () => {
+      repo = new AiInfraRepos(serverDB, userId, mockProviderConfigs, {
+        sharedProviderUserId: 'shared-admin-id',
+      });
+
+      vi.spyOn(repo.aiProviderModel, 'getAiProviderList').mockResolvedValue([]);
+      vi.spyOn((repo as any).sharedAiProviderModel, 'getAiProviderList').mockResolvedValue([
+        {
+          enabled: true,
+          id: 'shared-custom',
+          name: 'Shared Custom',
+          source: 'custom',
+        },
+      ]);
+
+      const result = await repo.getAiProviderList();
+
+      expect(result).toContainEqual(
+        expect.objectContaining({
+          enabled: true,
+          id: 'shared-custom',
+          name: 'Shared Custom',
+          source: 'custom',
+        }),
+      );
+    });
   });
 });

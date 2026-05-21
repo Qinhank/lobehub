@@ -66,5 +66,107 @@ describe('AiInfraRepos', () => {
         source: 'builtin',
       });
     });
+
+    it('should return shared provider detail without shared key vaults', async () => {
+      repo = new AiInfraRepos(serverDB, userId, mockProviderConfigs, {
+        sharedProviderUserId: 'shared-admin-id',
+      });
+
+      vi.spyOn(repo.aiProviderModel, 'getAiProviderById').mockResolvedValue(undefined);
+      vi.spyOn((repo as any).sharedAiProviderModel, 'getAiProviderById').mockResolvedValue({
+        enabled: true,
+        fetchOnClient: true,
+        id: 'shared-custom',
+        keyVaults: { apiKey: 'shared-secret' },
+        name: 'Shared Custom',
+        settings: { sdkType: 'openai' },
+        source: 'custom',
+      });
+
+      const result = await repo.getAiProviderDetail('shared-custom');
+
+      expect(result).toMatchObject({
+        enabled: true,
+        fetchOnClient: false,
+        id: 'shared-custom',
+        keyVaults: {},
+        name: 'Shared Custom',
+        settings: { sdkType: 'openai' },
+        source: 'custom',
+      });
+    });
+
+    it('should keep shared metadata when user provider row has no key vaults', async () => {
+      repo = new AiInfraRepos(serverDB, userId, mockProviderConfigs, {
+        sharedProviderUserId: 'shared-admin-id',
+      });
+
+      vi.spyOn(repo.aiProviderModel, 'getAiProviderById').mockResolvedValue({
+        enabled: false,
+        fetchOnClient: true,
+        id: 'shared-custom',
+        keyVaults: {},
+        settings: {},
+        source: 'custom',
+      } as AiProviderDetailItem);
+      vi.spyOn((repo as any).sharedAiProviderModel, 'getAiProviderById').mockResolvedValue({
+        enabled: true,
+        fetchOnClient: true,
+        id: 'shared-custom',
+        keyVaults: { apiKey: 'shared-secret' },
+        name: 'Shared Custom',
+        settings: { sdkType: 'openai' },
+        source: 'custom',
+      });
+
+      const result = await repo.getAiProviderDetail('shared-custom');
+
+      expect(result).toMatchObject({
+        enabled: false,
+        fetchOnClient: false,
+        id: 'shared-custom',
+        keyVaults: {},
+        name: 'Shared Custom',
+        settings: { sdkType: 'openai' },
+        source: 'custom',
+      });
+    });
+
+    it('should use user key vaults without exposing shared key vaults', async () => {
+      repo = new AiInfraRepos(serverDB, userId, mockProviderConfigs, {
+        sharedProviderUserId: 'shared-admin-id',
+      });
+
+      vi.spyOn(repo.aiProviderModel, 'getAiProviderById').mockResolvedValue({
+        enabled: true,
+        fetchOnClient: true,
+        id: 'shared-custom',
+        keyVaults: { apiKey: 'user-secret' },
+        settings: {},
+        source: 'custom',
+      } as AiProviderDetailItem);
+      vi.spyOn((repo as any).sharedAiProviderModel, 'getAiProviderById').mockResolvedValue({
+        enabled: true,
+        fetchOnClient: false,
+        id: 'shared-custom',
+        keyVaults: {
+          apiKey: 'shared-secret',
+          baseURL: 'https://shared.example.com',
+        },
+        name: 'Shared Custom',
+        settings: { sdkType: 'openai' },
+        source: 'custom',
+      });
+
+      const result = await repo.getAiProviderDetail('shared-custom');
+
+      expect(result).toMatchObject({
+        fetchOnClient: true,
+        keyVaults: { apiKey: 'user-secret' },
+        name: 'Shared Custom',
+        settings: { sdkType: 'openai' },
+      });
+      expect(result?.keyVaults).not.toHaveProperty('baseURL');
+    });
   });
 });

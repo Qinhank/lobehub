@@ -277,5 +277,89 @@ describe('AiInfraRepos', () => {
         },
       });
     });
+
+    it('should strip shared provider key vaults from frontend runtime state', async () => {
+      repo = new AiInfraRepos(serverDB, userId, {}, { sharedProviderUserId: 'shared-admin-id' });
+
+      vi.spyOn(repo.aiProviderModel, 'getAiProviderRuntimeConfig').mockResolvedValue({});
+      vi.spyOn((repo as any).sharedAiProviderModel, 'getAiProviderRuntimeConfig').mockResolvedValue({
+        'shared-custom': {
+          config: {},
+          fetchOnClient: true,
+          keyVaults: {
+            apiKey: 'shared-secret',
+            baseURL: 'https://shared.example.com',
+          },
+          settings: { sdkType: 'openai' },
+        },
+      } as any);
+      vi.spyOn(repo, 'getUserEnabledProviderList').mockResolvedValue([
+        { id: 'shared-custom', name: 'Shared Custom', source: 'custom' },
+      ]);
+      vi.spyOn(repo, 'getEnabledModels').mockResolvedValue([
+        {
+          enabled: true,
+          id: 'shared-model',
+          providerId: 'shared-custom',
+          type: 'chat',
+        },
+      ] as EnabledAiModel[]);
+
+      const result = await repo.getAiProviderRuntimeState();
+
+      expect(result.runtimeConfig['shared-custom']).toMatchObject({
+        fetchOnClient: false,
+        keyVaults: {},
+        settings: { sdkType: 'openai' },
+      });
+    });
+
+    it('should keep user key vaults isolated when merging shared runtime settings', async () => {
+      repo = new AiInfraRepos(serverDB, userId, {}, { sharedProviderUserId: 'shared-admin-id' });
+
+      vi.spyOn(repo.aiProviderModel, 'getAiProviderRuntimeConfig').mockResolvedValue({
+        'shared-custom': {
+          config: {},
+          fetchOnClient: true,
+          keyVaults: {
+            apiKey: 'user-secret',
+          },
+          settings: {},
+        },
+      } as any);
+      vi.spyOn((repo as any).sharedAiProviderModel, 'getAiProviderRuntimeConfig').mockResolvedValue({
+        'shared-custom': {
+          config: {},
+          fetchOnClient: false,
+          keyVaults: {
+            apiKey: 'shared-secret',
+            baseURL: 'https://shared.example.com',
+          },
+          settings: { sdkType: 'openai' },
+        },
+      } as any);
+      vi.spyOn(repo, 'getUserEnabledProviderList').mockResolvedValue([
+        { id: 'shared-custom', name: 'Shared Custom', source: 'custom' },
+      ]);
+      vi.spyOn(repo, 'getEnabledModels').mockResolvedValue([
+        {
+          enabled: true,
+          id: 'shared-model',
+          providerId: 'shared-custom',
+          type: 'chat',
+        },
+      ] as EnabledAiModel[]);
+
+      const result = await repo.getAiProviderRuntimeState();
+
+      expect(result.runtimeConfig['shared-custom']).toMatchObject({
+        fetchOnClient: true,
+        keyVaults: {
+          apiKey: 'user-secret',
+        },
+        settings: { sdkType: 'openai' },
+      });
+      expect(result.runtimeConfig['shared-custom'].keyVaults).not.toHaveProperty('baseURL');
+    });
   });
 });

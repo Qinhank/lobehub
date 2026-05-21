@@ -1,4 +1,4 @@
-import { type AiProviderModelListItem } from 'model-bank';
+import type { AiProviderModelListItem } from 'model-bank';
 import {
   AiModelTypeSchema,
   CreateAiModelSchema,
@@ -14,13 +14,18 @@ import { authedProcedure, router } from '@/libs/trpc/lambda';
 import { serverDatabase } from '@/libs/trpc/lambda/middleware';
 import { getServerGlobalConfig } from '@/server/globalConfig';
 import { KeyVaultsGateKeeper } from '@/server/modules/KeyVaultsEncrypt';
-import { type ProviderConfig } from '@/types/user/settings';
+import {
+  assertCanMutateSharedAiProvider,
+  resolveSharedAiProviderAccess,
+} from '@/server/modules/SharedAiProvider';
+import type { ProviderConfig } from '@/types/user/settings';
 
 const aiModelProcedure = authedProcedure.use(serverDatabase).use(async (opts) => {
   const { ctx } = opts;
 
   const gateKeeper = await KeyVaultsGateKeeper.initWithEnvKey();
   const { aiProvider } = await getServerGlobalConfig();
+  const sharedAiProviderAccess = await resolveSharedAiProviderAccess(ctx.serverDB, ctx.userId);
 
   return opts.next({
     ctx: {
@@ -28,9 +33,11 @@ const aiModelProcedure = authedProcedure.use(serverDatabase).use(async (opts) =>
         ctx.serverDB,
         ctx.userId,
         aiProvider as Record<string, ProviderConfig>,
+        sharedAiProviderAccess,
       ),
       aiModelModel: new AiModelModel(ctx.serverDB, ctx.userId),
       gateKeeper,
+      sharedAiProviderAccess,
       userModel: new UserModel(ctx.serverDB, ctx.userId),
     },
   });
@@ -46,6 +53,12 @@ export const aiModelRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
+      await assertCanMutateSharedAiProvider(
+        ctx.serverDB,
+        ctx.userId,
+        input.id,
+        ctx.sharedAiProviderAccess,
+      );
       return ctx.aiModelModel.batchToggleAiModels(input.id, input.models, input.enabled);
     }),
   batchUpdateAiModels: aiModelProcedure
@@ -57,21 +70,45 @@ export const aiModelRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
+      await assertCanMutateSharedAiProvider(
+        ctx.serverDB,
+        ctx.userId,
+        input.id,
+        ctx.sharedAiProviderAccess,
+      );
       return ctx.aiModelModel.batchUpdateAiModels(input.id, input.models);
     }),
 
   clearModelsByProvider: aiModelProcedure
     .input(z.object({ providerId: z.string() }))
     .mutation(async ({ input, ctx }) => {
+      await assertCanMutateSharedAiProvider(
+        ctx.serverDB,
+        ctx.userId,
+        input.providerId,
+        ctx.sharedAiProviderAccess,
+      );
       return ctx.aiModelModel.clearModelsByProvider(input.providerId);
     }),
   clearRemoteModels: aiModelProcedure
     .input(z.object({ providerId: z.string() }))
     .mutation(async ({ input, ctx }) => {
+      await assertCanMutateSharedAiProvider(
+        ctx.serverDB,
+        ctx.userId,
+        input.providerId,
+        ctx.sharedAiProviderAccess,
+      );
       return ctx.aiModelModel.clearRemoteModels(input.providerId);
     }),
 
   createAiModel: aiModelProcedure.input(CreateAiModelSchema).mutation(async ({ input, ctx }) => {
+    await assertCanMutateSharedAiProvider(
+      ctx.serverDB,
+      ctx.userId,
+      input.providerId,
+      ctx.sharedAiProviderAccess,
+    );
     const data = await ctx.aiModelModel.create(input);
 
     return data?.id;
@@ -106,12 +143,24 @@ export const aiModelRouter = router({
   removeAiModel: aiModelProcedure
     .input(z.object({ id: z.string(), providerId: z.string() }))
     .mutation(async ({ input, ctx }) => {
+      await assertCanMutateSharedAiProvider(
+        ctx.serverDB,
+        ctx.userId,
+        input.providerId,
+        ctx.sharedAiProviderAccess,
+      );
       return ctx.aiModelModel.delete(input.id, input.providerId);
     }),
 
   toggleModelEnabled: aiModelProcedure
     .input(ToggleAiModelEnableSchema)
     .mutation(async ({ input, ctx }) => {
+      await assertCanMutateSharedAiProvider(
+        ctx.serverDB,
+        ctx.userId,
+        input.providerId,
+        ctx.sharedAiProviderAccess,
+      );
       return ctx.aiModelModel.toggleModelEnabled(input);
     }),
 
@@ -124,6 +173,12 @@ export const aiModelRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
+      await assertCanMutateSharedAiProvider(
+        ctx.serverDB,
+        ctx.userId,
+        input.providerId,
+        ctx.sharedAiProviderAccess,
+      );
       return ctx.aiModelModel.update(input.id, input.providerId, input.value);
     }),
 
@@ -141,6 +196,12 @@ export const aiModelRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
+      await assertCanMutateSharedAiProvider(
+        ctx.serverDB,
+        ctx.userId,
+        input.providerId,
+        ctx.sharedAiProviderAccess,
+      );
       return ctx.aiModelModel.updateModelsOrder(input.providerId, input.sortMap);
     }),
 });

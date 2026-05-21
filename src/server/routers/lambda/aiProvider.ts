@@ -9,18 +9,24 @@ import { serverDatabase } from '@/libs/trpc/lambda/middleware';
 import { getServerGlobalConfig } from '@/server/globalConfig';
 import { KeyVaultsGateKeeper } from '@/server/modules/KeyVaultsEncrypt';
 import { initModelRuntimeFromDB } from '@/server/modules/ModelRuntime';
-import { type AiProviderDetailItem, type AiProviderRuntimeState } from '@/types/aiProvider';
+import {
+  assertCanMutateSharedAiProvider,
+  assertCanMutateSharedAiProviders,
+  resolveSharedAiProviderAccess,
+} from '@/server/modules/SharedAiProvider';
+import type { AiProviderDetailItem, AiProviderRuntimeState } from '@/types/aiProvider';
 import {
   CreateAiProviderSchema,
   UpdateAiProviderConfigSchema,
   UpdateAiProviderSchema,
 } from '@/types/aiProvider';
-import { type ProviderConfig } from '@/types/user/settings';
+import type { ProviderConfig } from '@/types/user/settings';
 
 const aiProviderProcedure = authedProcedure.use(serverDatabase).use(async (opts) => {
   const { ctx } = opts;
 
   const { aiProvider } = await getServerGlobalConfig();
+  const sharedAiProviderAccess = await resolveSharedAiProviderAccess(ctx.serverDB, ctx.userId);
 
   const gateKeeper = await KeyVaultsGateKeeper.initWithEnvKey();
   return opts.next({
@@ -29,9 +35,11 @@ const aiProviderProcedure = authedProcedure.use(serverDatabase).use(async (opts)
         ctx.serverDB,
         ctx.userId,
         aiProvider as Record<string, ProviderConfig>,
+        sharedAiProviderAccess,
       ),
       aiProviderModel: new AiProviderModel(ctx.serverDB, ctx.userId),
       gateKeeper,
+      sharedAiProviderAccess,
       userModel: new UserModel(ctx.serverDB, ctx.userId),
     },
   });
@@ -89,6 +97,12 @@ export const aiProviderRouter = router({
     .input(CreateAiProviderSchema)
     .mutation(async ({ input, ctx }) => {
       try {
+        await assertCanMutateSharedAiProvider(
+          ctx.serverDB,
+          ctx.userId,
+          input.id,
+          ctx.sharedAiProviderAccess,
+        );
         const data = await ctx.aiProviderModel.create(input, ctx.gateKeeper.encrypt);
         return data?.id;
       } catch (error: any) {
@@ -123,6 +137,12 @@ export const aiProviderRouter = router({
   removeAiProvider: aiProviderProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ input, ctx }) => {
+      await assertCanMutateSharedAiProvider(
+        ctx.serverDB,
+        ctx.userId,
+        input.id,
+        ctx.sharedAiProviderAccess,
+      );
       return ctx.aiProviderModel.delete(input.id);
     }),
 
@@ -134,6 +154,12 @@ export const aiProviderRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
+      await assertCanMutateSharedAiProvider(
+        ctx.serverDB,
+        ctx.userId,
+        input.id,
+        ctx.sharedAiProviderAccess,
+      );
       return ctx.aiProviderModel.toggleProviderEnabled(input.id, input.enabled);
     }),
 
@@ -145,6 +171,12 @@ export const aiProviderRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
+      await assertCanMutateSharedAiProvider(
+        ctx.serverDB,
+        ctx.userId,
+        input.id,
+        ctx.sharedAiProviderAccess,
+      );
       return ctx.aiProviderModel.update(input.id, input.value);
     }),
 
@@ -156,6 +188,12 @@ export const aiProviderRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
+      await assertCanMutateSharedAiProvider(
+        ctx.serverDB,
+        ctx.userId,
+        input.id,
+        ctx.sharedAiProviderAccess,
+      );
       return ctx.aiProviderModel.updateConfig(
         input.id,
         input.value,
@@ -176,6 +214,12 @@ export const aiProviderRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
+      await assertCanMutateSharedAiProviders(
+        ctx.serverDB,
+        ctx.userId,
+        input.sortMap.map((item) => item.id),
+        ctx.sharedAiProviderAccess,
+      );
       return ctx.aiProviderModel.updateOrder(input.sortMap);
     }),
 });

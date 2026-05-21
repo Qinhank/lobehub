@@ -195,7 +195,7 @@ EU_CENTRAL_1_QSTASH_CURRENT_SIGNING_KEY=<same-as-QSTASH_CURRENT_SIGNING_KEY>
 EU_CENTRAL_1_QSTASH_NEXT_SIGNING_KEY=<same-as-QSTASH_NEXT_SIGNING_KEY>
 ```
 
-注意：QStash 是 Upstash 云端回调 LobeHub 的机制。如果 workflow 目标 URL 仍然是 `localhost`，云端通常访问不到本机服务。只配置 token 可以消除 “client token is not set” 这类启动 / 触发错误；真正要让云端 workflow 回调成功，需要把 `APP_URL` 配成 Upstash 可访问的公网地址，例如 `https://chat.hankqin.com`。`INTERNAL_APP_URL` 如果没有容器内直连地址，也可以先和 `APP_URL` 保持一致；后续 Docker / 生产部署再改成服务端可自访问地址。
+注意：QStash 是 Upstash 云端回调 LobeHub 的机制。如果 workflow 目标 URL 仍然是 `localhost`，云端通常访问不到本机服务。只配置 token 可以消除 “client token is not set” 这类启动 / 触发错误；真正要让云端 workflow 回调成功，需要把 `APP_URL` 配成 Upstash 可访问的公网地址，例如 `https://<your-domain>`。`INTERNAL_APP_URL` 如果没有容器内直连地址，也可以先和 `APP_URL` 保持一致；后续 Docker / 生产部署再改成服务端可自访问地址。
 
 ## RustFS 安装
 
@@ -344,8 +344,8 @@ SUB2API_PROXY_API_KEY=<upstream-api-key>
 说明：
 
 - LobeHub 的 provider ID 仍然使用内置 `openai`，只是把 OpenAI compatible base URL 指向同站 `/sub2api`。
-- `APP_URL` 用于浏览器访问、OAuth 回调、QStash webhook 等外部回调；本地开发用 `http://localhost:3010`，公网 QStash 场景用 `https://chat.hankqin.com`。
-- `INTERNAL_APP_URL` 用于服务端内部自调用；本地和 `APP_URL` 一样即可。如果没有单独的容器内直连地址，也可以先设置为 `https://chat.hankqin.com`。
+- `APP_URL` 用于浏览器访问、OAuth 回调、QStash webhook 等外部回调；本地开发用 `http://localhost:3010`，公网 QStash 场景用 `https://<your-domain>`。
+- `INTERNAL_APP_URL` 用于服务端内部自调用；本地和 `APP_URL` 一样即可。如果没有单独的容器内直连地址，也可以先设置为 `https://<your-domain>`。
 - `AUTH_DISABLE_EMAIL_PASSWORD=1` 让 LobeHub 走纯 SSO，不暴露邮箱密码登录 / 注册入口。
 - `JWKS_KEY` 用于 OIDC 和 LobeHub 内部 lambda -> async 调用签名；图片生成会先创建数据库记录，再用它启动后台异步任务。缺失时会出现 `start async task error: JWKS_KEY environment variable is not set`。
 - `JWKS_KEY` 可以用 `node scripts/generate-oidc-jwk.mjs` 生成；真实值只放本地 `.env`，不要提交。
